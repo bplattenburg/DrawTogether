@@ -49,17 +49,35 @@ struct CanvasView: UIViewRepresentable {
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            guard canvasView.drawing != parent.drawing else {
+                print("skipping redundant insert")
+                return
+            }
             guard let jsonData = try? JSONEncoder().encode(canvasView.drawing),
-                let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+                  let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+//            guard let drawingString = String(data: canvasView.drawing.dataRepresentation(), encoding: .utf8) else { return }
             print("insert")
             Task {
-                try? await DittoManager.shared?.ditto?.store.execute(query: "INSERT INTO drawings documents deserialize_json('\(jsonString)') ON ID CONFLICT DO MERGE")
+                do {
+                    try await DittoManager.shared?.ditto?.store.execute(query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
+                                                                        arguments: ["doc": ["_id": "1","drawing": jsonString]]) // TODO ID from somewhere
+                } catch let error {
+                    print(error)
+                }
             }
         }
 
         func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
+            print(result.items.count)
             guard let item = result.items.first,
-                  let drawing = try? JSONDecoder().decode(PKDrawing.self, from: item.jsonData()) else { return }
+            let drawingJSONString = item.value["drawing"] as? String,
+            let drawingJSONData = drawingJSONString.data(using: .utf8),
+                let drawing = try? JSONDecoder().decode(PKDrawing.self, from: drawingJSONData) else { return }
+
+            guard drawing != parent.drawing else {
+                print("skipping redundant observation")
+                return
+            }
             print("observe")
             parent.drawing = drawing // TODO merge, use PKStrokes for granular updates etc
         }
