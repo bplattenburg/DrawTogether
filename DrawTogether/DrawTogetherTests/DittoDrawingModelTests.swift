@@ -100,6 +100,33 @@ final class DittoDrawingModelTests: XCTestCase {
         XCTAssertTrue(removes.isEmpty, "Should not detect any removals")
     }
 
+    func testDiffDetectsMixedChanges() {
+        var model = DittoDrawingModel()
+
+        let date1 = Date(timeIntervalSince1970: 1000)
+        let date2 = Date(timeIntervalSince1970: 2000)
+        let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date1)
+        let stroke2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date2)
+        guard let json1 = encodeStroke(stroke1),
+              let json2 = encodeStroke(stroke2) else {
+            XCTFail("Failed to encode strokes")
+            return
+        }
+        model.updateFromStrokesMap([
+            "2026-03-25T12:00:00.000Z": json1,
+            "2026-03-25T12:00:01.000Z": json2,
+        ])
+
+        // Remove stroke2, add stroke3
+        let date3 = Date(timeIntervalSince1970: 3000)
+        let stroke3 = makeStroke(at: CGPoint(x: 200, y: 200), creationDate: date3)
+        let (inserts, removes) = model.diff(currentStrokes: [stroke1, stroke3])
+
+        XCTAssertEqual(inserts.count, 1, "Should detect 1 new stroke")
+        XCTAssertEqual(removes.count, 1, "Should detect 1 removal")
+        XCTAssertEqual(removes.first, "2026-03-25T12:00:01.000Z")
+    }
+
     func testDiffDetectsRemovedStrokes() {
         var model = DittoDrawingModel()
 
