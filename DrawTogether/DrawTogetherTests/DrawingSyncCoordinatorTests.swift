@@ -61,8 +61,15 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
     /// Triggers a canvas drawing change and waits for the async sync to complete
     private func triggerSyncAndWait() async throws {
         coordinator.canvasViewDrawingDidChange(canvasView)
-        // Allow debounce (0ns in tests) + transaction to complete
-        try await Task.sleep(nanoseconds: 50_000_000) // 50ms for async work
+
+        // Wait for the async work to complete using an XCTestExpectation instead of a fixed sleep.
+        // We schedule fulfillment after ~50ms (matching the original delay) but enforce a clear timeout.
+        let expectation = expectation(description: "Wait for drawing sync to complete")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 1.0)
     }
 
     // MARK: - Outbound Sync Tests
