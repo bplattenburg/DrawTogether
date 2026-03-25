@@ -22,7 +22,9 @@ struct CanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        uiView.drawing = drawing
+        if uiView.drawing != drawing {
+            uiView.drawing = drawing
+        }
         context.coordinator.toolPicker = toolPicker
         toolPicker?.setVisible(true, forFirstResponder: uiView)
         toolPicker?.addObserver(uiView)
@@ -37,6 +39,8 @@ struct CanvasView: UIViewRepresentable {
         var parent: CanvasView
         var toolPicker: PKToolPicker?
         var observer: DittoStoreObserver?
+        var model = DittoDrawingModel()
+        var isUpdatingFromDitto = false
 
         init(_ parent: CanvasView) {
             self.parent = parent
@@ -49,38 +53,60 @@ struct CanvasView: UIViewRepresentable {
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-            guard canvasView.drawing != parent.drawing else {
-                print("skipping redundant insert")
-                return
-            }
-            guard let jsonData = try? JSONEncoder().encode(canvasView.drawing),
-                  let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-//            guard let drawingString = String(data: canvasView.drawing.dataRepresentation(), encoding: .utf8) else { return }
-            print("insert")
+            guard !isUpdatingFromDitto else { return }
+
+            let (inserts, removes) = model.diff(currentStrokes: canvasView.drawing.strokes)
+            guard !inserts.isEmpty || !removes.isEmpty else { return }
+
+            model.apply(inserts: inserts, removes: removes)
+
+            let drawingID = model.drawingID
             Task {
                 do {
-                    try await DittoManager.shared?.ditto?.store.execute(query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
-                                                                        arguments: ["doc": ["_id": "1","drawing": jsonString]]) // TODO ID from somewhere
-                } catch let error {
-                    print(error)
+                    guard let ditto = DittoManager.shared?.ditto else { return }
+
+                    try await ditto.store.transaction { transaction in
+                        for (key, jsonString) in inserts {
+                            let doc: [String: Any] = ["_id": drawingID, "strokes": [key: jsonString]]
+                            try await transaction.execute(
+                                query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
+                                arguments: ["doc": doc]
+                            )
+                        }
+
+                        for key in removes {
+                            try await transaction.execute(
+                                query: "UPDATE drawings UNSET strokes.\(key) WHERE _id = :drawingID",
+                                arguments: ["drawingID": drawingID]
+                            )
+                        }
+
+                        return .commit
+                    }
+                } catch {
+                    print("Error syncing strokes: \(error)")
                 }
             }
         }
 
         func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
-            print(result.items.count)
-            guard let item = result.items.first,
-            let drawingJSONString = item.value["drawing"] as? String,
-            let drawingJSONData = drawingJSONString.data(using: .utf8),
-                let drawing = try? JSONDecoder().decode(PKDrawing.self, from: drawingJSONData) else { return }
-
-            guard drawing != parent.drawing else {
-                print("skipping redundant observation")
-                return
+            // Parse the strokes MAP from the Ditto result
+            var strokesMap: [String: String] = [:]
+            if let item = result.items.first,
+               let rawMap = item.value["strokes"] as? [String: Any] {
+                for (key, value) in rawMap {
+                    if let strokeString = value as? String {
+                        strokesMap[key] = strokeString
+                    }
+                }
             }
-            print("observe")
-            parent.drawing = drawing // TODO merge, use PKStrokes for granular updates etc
+
+            model.updateFromStrokesMap(strokesMap)
+            isUpdatingFromDitto = true
+            parent.drawing = model.drawing()
+            DispatchQueue.main.async { [weak self] in
+                self?.isUpdatingFromDitto = false
+            }
         }
     }
-
 }
