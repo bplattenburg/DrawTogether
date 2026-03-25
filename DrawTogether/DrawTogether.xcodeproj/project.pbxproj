@@ -40,19 +40,19 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		B10000032E873600001228BF /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		A4A6DA392E873256001228BF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				A4A6DA522E873476001228BF /* DittoObjC in Frameworks */,
 				A4A6DA542E873476001228BF /* DittoSwift in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000032E873600001228BF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -122,6 +122,10 @@
 				B10000022E873600001228BF /* DrawTogetherTests */,
 			);
 			name = DrawTogetherTests;
+			packageProductDependencies = (
+				A4A6DA512E873476001228BF /* DittoObjC */,
+				A4A6DA532E873476001228BF /* DittoSwift */,
+			);
 			productName = DrawTogetherTests;
 			productReference = B10000012E873600001228BF /* DrawTogetherTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";

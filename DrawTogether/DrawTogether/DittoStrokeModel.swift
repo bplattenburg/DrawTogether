@@ -7,19 +7,18 @@
 
 import Foundation
 import PencilKit
-import CryptoKit
 
 /// Handles encoding, decoding, and key generation for individual PKStrokes.
 /// Each stroke is serialized by wrapping it in a single-stroke PKDrawing (since PKStroke is not Codable).
-/// Keys are ISO8601 timestamps with a content hash suffix for deterministic, sortable identification.
+/// Keys are ISO8601 timestamps derived from `PKStrokePath.creationDate`, which PencilKit assigns
+/// uniquely when a stroke is drawn, giving deterministic and chronologically sortable keys.
 struct DittoStrokeModel {
 
     /// Encodes a PKStroke as a JSON string (via single-stroke PKDrawing wrapper)
-    static func encode(_ stroke: PKStroke) -> (json: String, data: Data)? {
+    static func encode(_ stroke: PKStroke) -> String? {
         let wrapper = PKDrawing(strokes: [stroke])
-        guard let data = try? JSONEncoder().encode(wrapper),
-              let json = String(data: data, encoding: .utf8) else { return nil }
-        return (json: json, data: data)
+        guard let data = try? JSONEncoder().encode(wrapper) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// Decodes a PKStroke from a JSON string (via single-stroke PKDrawing wrapper)
@@ -29,14 +28,11 @@ struct DittoStrokeModel {
         return wrapper.strokes.first
     }
 
-    /// Generates a deterministic, sortable key from a stroke's creation date and encoded data.
-    /// ISO8601 prefix ensures lexicographic sort = chronological order.
-    /// SHA256 hash suffix provides uniqueness for strokes with the same creation date.
-    static func generateKey(for date: Date, encodedData: Data) -> String {
-        let timestamp = ISO8601DateFormatter.fractional.string(from: date)
-        let hash = SHA256.hash(data: encodedData)
-        let hashString = hash.prefix(16).map { String(format: "%02x", $0) }.joined()
-        return "\(timestamp)-\(hashString)"
+    /// Generates a deterministic, sortable key from a stroke's creation date.
+    /// ISO8601 with fractional seconds ensures lexicographic sort = chronological order.
+    /// PencilKit assigns unique creation dates per stroke, so no additional disambiguation is needed.
+    static func generateKey(for date: Date) -> String {
+        ISO8601DateFormatter.fractional.string(from: date)
     }
 }
 

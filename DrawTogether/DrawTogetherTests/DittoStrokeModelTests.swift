@@ -24,21 +24,11 @@ final class DittoStrokeModelTests: XCTestCase {
 
     // MARK: - Encode/Decode Tests
 
-    func testEncodeProducesValidJSON() {
-        let stroke = makeStroke(at: CGPoint(x: 42, y: 42))
-        guard let encoded = DittoStrokeModel.encode(stroke) else {
-            XCTFail("Failed to encode stroke")
-            return
-        }
-        XCTAssertFalse(encoded.json.isEmpty)
-        XCTAssertFalse(encoded.data.isEmpty)
-    }
-
     func testRoundTripPreservesContent() {
         let originalStroke = makeStroke(at: CGPoint(x: 42, y: 42))
 
-        guard let encoded = DittoStrokeModel.encode(originalStroke),
-              let roundTrippedStroke = DittoStrokeModel.decode(from: encoded.json) else {
+        guard let json = DittoStrokeModel.encode(originalStroke),
+              let roundTrippedStroke = DittoStrokeModel.decode(from: json) else {
             XCTFail("Round-trip encoding/decoding failed")
             return
         }
@@ -60,34 +50,32 @@ final class DittoStrokeModelTests: XCTestCase {
         var keys = Set<String>()
         let baseDate = Date()
         for i in 0..<100 {
-            let stroke = makeStroke(at: CGPoint(x: CGFloat(i), y: CGFloat(i)), creationDate: baseDate.addingTimeInterval(Double(i) * 0.001))
-            guard let encoded = DittoStrokeModel.encode(stroke) else { continue }
-            keys.insert(DittoStrokeModel.generateKey(for: stroke.path.creationDate, encodedData: encoded.data))
+            let date = baseDate.addingTimeInterval(Double(i) * 0.001)
+            keys.insert(DittoStrokeModel.generateKey(for: date))
         }
         XCTAssertEqual(keys.count, 100, "All 100 generated keys should be unique")
     }
 
-    func testGenerateKeyContainsISO8601Prefix() {
-        let date = Date()
-        let stroke = makeStroke(creationDate: date)
-        guard let encoded = DittoStrokeModel.encode(stroke) else {
-            XCTFail("Failed to encode stroke")
-            return
-        }
-        let key = DittoStrokeModel.generateKey(for: date, encodedData: encoded.data)
-        let expectedPrefix = ISO8601DateFormatter.fractional.string(from: date)
-        XCTAssertTrue(key.hasPrefix(expectedPrefix), "Key should start with ISO8601 timestamp")
+    func testGenerateKeyIsDeterministic() {
+        let date = Date(timeIntervalSince1970: 1000)
+        let key1 = DittoStrokeModel.generateKey(for: date)
+        let key2 = DittoStrokeModel.generateKey(for: date)
+        XCTAssertEqual(key1, key2, "Same date should always produce the same key")
     }
 
-    func testGenerateKeyIsDeterministic() {
-        let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
-        guard let encoded = DittoStrokeModel.encode(stroke) else {
-            XCTFail("Failed to encode stroke")
-            return
-        }
-
-        let key1 = DittoStrokeModel.generateKey(for: stroke.path.creationDate, encodedData: encoded.data)
-        let key2 = DittoStrokeModel.generateKey(for: stroke.path.creationDate, encodedData: encoded.data)
-        XCTAssertEqual(key1, key2, "Same stroke data should always produce the same key")
+    func testGenerateKeysSortChronologically() {
+        let date1 = Date(timeIntervalSince1970: 1000)
+        let date2 = Date(timeIntervalSince1970: 2000)
+        let date3 = Date(timeIntervalSince1970: 3000)
+        let keys = [
+            DittoStrokeModel.generateKey(for: date3),
+            DittoStrokeModel.generateKey(for: date1),
+            DittoStrokeModel.generateKey(for: date2),
+        ]
+        XCTAssertEqual(keys.sorted(), [
+            DittoStrokeModel.generateKey(for: date1),
+            DittoStrokeModel.generateKey(for: date2),
+            DittoStrokeModel.generateKey(for: date3),
+        ], "Keys should sort in chronological order")
     }
 }

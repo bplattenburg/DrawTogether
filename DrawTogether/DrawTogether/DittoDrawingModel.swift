@@ -64,6 +64,14 @@ struct DittoDrawingModel {
 
     /// Compares current canvas strokes against known state using creation dates as stable identifiers.
     /// Returns inserts (key -> JSON string) and removes (keys to UNSET).
+    ///
+    /// Strokes are identified by `PKStrokePath.creationDate`, which PencilKit assigns uniquely when
+    /// a stroke is drawn. This is the only stable identifier available — PKStroke is not Codable and
+    /// PKDrawing's JSON encoding is non-deterministic across calls, so content hashing cannot reliably
+    /// detect "same stroke" across multiple diff invocations. In practice this is correct because
+    /// PencilKit strokes are immutable after creation; modifications (e.g. eraser) produce new strokes
+    /// with new creation dates.
+    ///
     /// Mutating: immediately persists key mappings for new strokes so repeated calls
     /// before apply() won't generate duplicate keys.
     mutating func diff(currentStrokes: [PKStroke]) -> (inserts: [String: String], removes: [String]) {
@@ -73,9 +81,9 @@ struct DittoDrawingModel {
         // Strokes in canvas but not known -> new
         var inserts: [String: String] = [:]
         for stroke in currentStrokes where !knownDates.contains(stroke.path.creationDate) {
-            guard let encoded = DittoStrokeModel.encode(stroke) else { continue }
-            let key = DittoStrokeModel.generateKey(for: stroke.path.creationDate, encodedData: encoded.data)
-            inserts[key] = encoded.json
+            guard let json = DittoStrokeModel.encode(stroke) else { continue }
+            let key = DittoStrokeModel.generateKey(for: stroke.path.creationDate)
+            inserts[key] = json
             // Persist key mapping immediately to prevent duplicate inserts on repeated calls
             creationDateToKey[stroke.path.creationDate] = key
             keyToCreationDate[key] = stroke.path.creationDate
@@ -88,6 +96,17 @@ struct DittoDrawingModel {
     }
 
     // MARK: - Apply Changes
+
+    /// Rolls back key mappings that were optimistically persisted by diff() when a transaction fails.
+    /// This allows the strokes to be re-detected and re-synced on the next diff.
+    mutating func rollbackPendingKeys(inserts: [String: String]) {
+        for key in inserts.keys {
+            if let date = keyToCreationDate[key] {
+                creationDateToKey.removeValue(forKey: date)
+                keyToCreationDate.removeValue(forKey: key)
+            }
+        }
+    }
 
     /// Updates internal state after a diff has been synced to Ditto
     mutating func apply(inserts: [String: String], removes: [String]) {

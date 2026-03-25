@@ -144,12 +144,12 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         // Simulate a remote insert directly into Ditto
         let remoteStroke = makeStroke(at: CGPoint(x: 200, y: 200), creationDate: Date(timeIntervalSince1970: 5000))
-        guard let encoded = DittoStrokeModel.encode(remoteStroke) else {
+        guard let remoteJSON = DittoStrokeModel.encode(remoteStroke) else {
             XCTFail("Failed to encode remote stroke")
             return
         }
-        let remoteKey = DittoStrokeModel.generateKey(for: remoteStroke.path.creationDate, encodedData: encoded.data)
-        let doc: [String: Any] = ["_id": coordinator.model.drawingID, "strokes": [remoteKey: encoded.json]]
+        let remoteKey = DittoStrokeModel.generateKey(for: remoteStroke.path.creationDate)
+        let doc: [String: Any] = ["_id": coordinator.model.drawingID, "strokes": [remoteKey: remoteJSON]]
         try await ditto.store.execute(
             query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
             arguments: ["doc": doc]

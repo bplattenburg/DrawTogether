@@ -52,29 +52,32 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
 
         // Cancel any in-flight sync and debounce
         syncTask?.cancel()
-        syncTask = Task { @MainActor [weak self] in
+        syncTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: self?.syncDebounceNanoseconds ?? 0)
             } catch {
                 return // Task was cancelled
             }
-            guard let self = self, !self.isUpdatingFromDitto else { return }
 
-            // Read current canvas strokes at debounce fire time (not capture time)
-            // to ensure we have the latest state including any Ditto updates
-            guard let currentStrokes = self.canvasView?.drawing.strokes else { return }
+            // Capture current state on main
+            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto)? in
+                guard let self, !self.isUpdatingFromDitto,
+                      let strokes = self.canvasView?.drawing.strokes,
+                      let ditto = self.ditto else { return nil }
+                return (strokes: strokes, drawingID: self.model.drawingID, ditto: ditto)
+            }) else { return }
 
-            let (inserts, removes) = self.model.diff(currentStrokes: currentStrokes)
+            // Diff on main (mutates model to persist key mappings)
+            let (inserts, removes) = await MainActor.run {
+                self?.model.diff(currentStrokes: syncContext.strokes) ?? ([:], [])
+            }
             guard !inserts.isEmpty || !removes.isEmpty else { return }
 
-            let drawingID = self.model.drawingID
+            // Run Ditto transaction off main
             do {
-                guard let ditto = self.ditto else { return }
-
-                try await ditto.store.transaction { transaction in
-                    // Batch all inserts into a single MERGE operation
+                try await syncContext.ditto.store.transaction { transaction in
                     if !inserts.isEmpty {
-                        let doc: [String: Any] = ["_id": drawingID, "strokes": inserts]
+                        let doc: [String: Any] = ["_id": syncContext.drawingID, "strokes": inserts]
                         try await transaction.execute(
                             query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
                             arguments: ["doc": doc]
@@ -84,15 +87,18 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
                     for key in removes {
                         try await transaction.execute(
                             query: "UPDATE drawings UNSET strokes.`\(key)` WHERE _id = :drawingID",
-                            arguments: ["drawingID": drawingID]
+                            arguments: ["drawingID": syncContext.drawingID]
                         )
                     }
 
                     return .commit
                 }
 
-                self.model.apply(inserts: inserts, removes: removes)
+                // Apply on main after successful commit
+                await MainActor.run { self?.model.apply(inserts: inserts, removes: removes) }
             } catch {
+                // Rollback optimistic key mappings so strokes can be re-synced on next diff
+                await MainActor.run { self?.model.rollbackPendingKeys(inserts: inserts) }
                 NSLog("Error syncing strokes: %@", "\(error)")
             }
         }
@@ -115,9 +121,10 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
         // Cancel any pending sync — will be re-triggered if there are uncommitted local strokes
         syncTask?.cancel()
 
-        // Preserve uncommitted local strokes that haven't been synced to Ditto yet
+        // Preserve uncommitted local strokes from the canvas (not the binding, which may be stale)
         let knownDates = Set(model.creationDateToKey.keys)
-        let uncommittedStrokes = parent.drawing.strokes.filter { !knownDates.contains($0.path.creationDate) }
+        let currentStrokes = canvasView?.drawing.strokes ?? parent.drawing.strokes
+        let uncommittedStrokes = currentStrokes.filter { !knownDates.contains($0.path.creationDate) }
 
         model.updateFromStrokesMap(strokesMap)
 
