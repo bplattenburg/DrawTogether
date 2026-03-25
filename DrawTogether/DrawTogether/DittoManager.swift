@@ -13,8 +13,8 @@ final class DittoManager {
     public let ditto: Ditto?
 
     private init() throws {
-        let cloudURL = URL(string: "YOUR_BIG_PEER_URL")!
-        let config = DittoConfig(databaseID: "YOUR_APP_ID", connect: .server(url: cloudURL))
+        let cloudURL = URL(string: Env.DITTO_WEBSOCKET_URL)!
+        let config = DittoConfig(databaseID: Env.DITTO_APP_ID, connect: .server(url: cloudURL))
         let ditto = try Ditto.openSync(config: config)
         try ditto.disableSyncWithV3()
         Task {
