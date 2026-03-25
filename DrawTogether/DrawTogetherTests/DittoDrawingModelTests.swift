@@ -7,6 +7,7 @@
 
 import XCTest
 import PencilKit
+import CryptoKit
 @testable import DrawTogether
 
 final class DittoDrawingModelTests: XCTestCase {
@@ -35,10 +36,12 @@ final class DittoDrawingModelTests: XCTestCase {
     func testGenerateKeyUniqueness() {
         let model = DittoDrawingModel()
         var keys = Set<String>()
-        let date = Date()
+        let baseDate = Date()
         for i in 0..<100 {
-            let strokeDate = date.addingTimeInterval(Double(i) * 0.001)
-            keys.insert(model.generateKey(for: strokeDate))
+            let stroke = makeStroke(at: CGPoint(x: CGFloat(i), y: CGFloat(i)), creationDate: baseDate.addingTimeInterval(Double(i) * 0.001))
+            let wrapper = PKDrawing(strokes: [stroke])
+            guard let data = try? JSONEncoder().encode(wrapper) else { continue }
+            keys.insert(model.generateKey(for: stroke.path.creationDate, encodedData: data))
         }
         XCTAssertEqual(keys.count, 100, "All 100 generated keys should be unique")
     }
@@ -46,9 +49,40 @@ final class DittoDrawingModelTests: XCTestCase {
     func testGenerateKeyContainsISO8601Prefix() {
         let model = DittoDrawingModel()
         let date = Date()
-        let key = model.generateKey(for: date)
+        let stroke = makeStroke(creationDate: date)
+        let wrapper = PKDrawing(strokes: [stroke])
+        guard let data = try? JSONEncoder().encode(wrapper) else {
+            XCTFail("Failed to encode stroke")
+            return
+        }
+        let key = model.generateKey(for: date, encodedData: data)
         let expectedPrefix = ISO8601DateFormatter.fractional.string(from: date)
         XCTAssertTrue(key.hasPrefix(expectedPrefix), "Key should start with ISO8601 timestamp")
+    }
+
+    func testGenerateKeyIsDeterministic() {
+        let model = DittoDrawingModel()
+        let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
+        let wrapper = PKDrawing(strokes: [stroke])
+        guard let data = try? JSONEncoder().encode(wrapper) else {
+            XCTFail("Failed to encode stroke")
+            return
+        }
+
+        let key1 = model.generateKey(for: stroke.path.creationDate, encodedData: data)
+        let key2 = model.generateKey(for: stroke.path.creationDate, encodedData: data)
+        XCTAssertEqual(key1, key2, "Same stroke data should always produce the same key")
+    }
+
+    func testDiffDoesNotDuplicateOnRepeatedCalls() {
+        var model = DittoDrawingModel()
+        let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
+
+        let (inserts1, _) = model.diff(currentStrokes: [stroke])
+        let (inserts2, _) = model.diff(currentStrokes: [stroke])
+
+        XCTAssertEqual(inserts1.count, 1, "First diff should detect 1 new stroke")
+        XCTAssertTrue(inserts2.isEmpty, "Second diff should produce no inserts — key was persisted on first call")
     }
 
     // MARK: - Drawing Reconstruction Tests
@@ -235,7 +269,7 @@ final class DittoDrawingModelTests: XCTestCase {
         XCTAssertEqual(model.creationDateToKey[date2], key2)
     }
 
-    func testUpdateFromStrokesMapIgnoresEmptyResult() {
+    func testUpdateFromStrokesMapClearsStateOnEmptyMap() {
         var model = DittoDrawingModel()
 
         let date1 = Date(timeIntervalSince1970: 1000)

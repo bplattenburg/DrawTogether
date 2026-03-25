@@ -64,8 +64,9 @@ struct CanvasView: UIViewRepresentable {
                     guard let ditto = DittoManager.shared?.ditto else { return }
 
                     try await ditto.store.transaction { transaction in
-                        for (key, jsonString) in inserts {
-                            let doc: [String: Any] = ["_id": drawingID, "strokes": [key: jsonString]]
+                        // Batch all inserts into a single MERGE operation
+                        if !inserts.isEmpty {
+                            let doc: [String: Any] = ["_id": drawingID, "strokes": inserts]
                             try await transaction.execute(
                                 query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
                                 arguments: ["doc": doc]
@@ -93,7 +94,7 @@ struct CanvasView: UIViewRepresentable {
         }
 
         func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
-            guard let item = result.items.first,
+            guard let item = result.items.first(where: { ($0.value["_id"] as? String) == model.drawingID }),
                   let rawMap = item.value["strokes"] as? [String: Any] else {
                 return
             }
