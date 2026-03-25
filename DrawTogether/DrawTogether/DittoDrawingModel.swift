@@ -25,6 +25,9 @@ struct DittoDrawingModel {
     /// Maps stroke creation date to Ditto key, for stable diffing
     private(set) var creationDateToKey: [Date: String] = [:]
 
+    /// Reverse map: Ditto key to creation date, for O(1) removal lookups
+    private(set) var keyToCreationDate: [String: Date] = [:]
+
     init(drawingID: String = "1") {
         self.drawingID = drawingID
     }
@@ -43,9 +46,16 @@ struct DittoDrawingModel {
         let sortedKeys = strokeMap.keys.sorted()
         let strokes: [PKStroke] = sortedKeys.compactMap { key in
             guard let json = strokeMap[key],
-                  let data = json.data(using: .utf8),
-                  let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data) else { return nil }
-            return wrapper.strokes.first
+                  let data = json.data(using: .utf8) else {
+                assertionFailure("Missing or invalid UTF-8 data for stroke key: \(key)")
+                return nil
+            }
+            guard let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data),
+                  let stroke = wrapper.strokes.first else {
+                assertionFailure("Failed to decode stroke for key: \(key)")
+                return nil
+            }
+            return stroke
         }
         return PKDrawing(strokes: strokes)
     }
@@ -56,11 +66,13 @@ struct DittoDrawingModel {
     mutating func updateFromStrokesMap(_ map: [String: String]) {
         strokeMap = map
         creationDateToKey = [:]
+        keyToCreationDate = [:]
         for (key, json) in map {
             if let data = json.data(using: .utf8),
                let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data),
                let stroke = wrapper.strokes.first {
                 creationDateToKey[stroke.path.creationDate] = key
+                keyToCreationDate[key] = stroke.path.creationDate
             }
         }
     }
@@ -95,8 +107,9 @@ struct DittoDrawingModel {
     /// Updates internal state after a diff has been synced to Ditto
     mutating func apply(inserts: [String: String], removes: [String]) {
         for key in removes {
-            if let date = creationDateToKey.first(where: { $0.value == key })?.key {
+            if let date = keyToCreationDate[key] {
                 creationDateToKey.removeValue(forKey: date)
+                keyToCreationDate.removeValue(forKey: key)
             }
             strokeMap.removeValue(forKey: key)
         }
@@ -106,6 +119,7 @@ struct DittoDrawingModel {
                let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data),
                let stroke = wrapper.strokes.first {
                 creationDateToKey[stroke.path.creationDate] = key
+                keyToCreationDate[key] = stroke.path.creationDate
             }
         }
     }

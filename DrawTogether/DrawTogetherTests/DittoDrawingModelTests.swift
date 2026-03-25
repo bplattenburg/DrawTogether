@@ -195,6 +195,66 @@ final class DittoDrawingModelTests: XCTestCase {
         XCTAssertTrue(removes.isEmpty, "No removes expected after apply")
     }
 
+    func testApplyKeepsReverseMapsConsistent() {
+        var model = DittoDrawingModel()
+
+        let date1 = Date(timeIntervalSince1970: 1000)
+        let date2 = Date(timeIntervalSince1970: 2000)
+        let date3 = Date(timeIntervalSince1970: 3000)
+        let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date1)
+        let stroke2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date2)
+        let stroke3 = makeStroke(at: CGPoint(x: 90, y: 90), creationDate: date3)
+        guard let json1 = encodeStroke(stroke1),
+              let json2 = encodeStroke(stroke2),
+              let json3 = encodeStroke(stroke3) else {
+            XCTFail("Failed to encode strokes")
+            return
+        }
+
+        let key1 = "2026-03-25T12:00:00.000Z-AAA"
+        let key2 = "2026-03-25T12:00:01.000Z-BBB"
+        let key3 = "2026-03-25T12:00:02.000Z-CCC"
+
+        model.updateFromStrokesMap([key1: json1, key2: json2])
+
+        // Verify reverse map is populated
+        XCTAssertEqual(model.keyToCreationDate[key1], date1)
+        XCTAssertEqual(model.keyToCreationDate[key2], date2)
+
+        // Apply: remove key1, add key3
+        model.apply(inserts: [key3: json3], removes: [key1])
+
+        // Verify both maps are consistent after apply
+        XCTAssertNil(model.keyToCreationDate[key1], "Removed key should be gone from reverse map")
+        XCTAssertNil(model.creationDateToKey[date1], "Removed date should be gone from forward map")
+        XCTAssertEqual(model.keyToCreationDate[key3], date3, "Inserted key should be in reverse map")
+        XCTAssertEqual(model.creationDateToKey[date3], key3, "Inserted date should be in forward map")
+
+        // Existing entry should be untouched
+        XCTAssertEqual(model.keyToCreationDate[key2], date2)
+        XCTAssertEqual(model.creationDateToKey[date2], key2)
+    }
+
+    func testUpdateFromStrokesMapIgnoresEmptyResult() {
+        var model = DittoDrawingModel()
+
+        let date1 = Date(timeIntervalSince1970: 1000)
+        let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date1)
+        guard let json1 = encodeStroke(stroke1) else {
+            XCTFail("Failed to encode stroke")
+            return
+        }
+
+        model.updateFromStrokesMap(["2026-03-25T12:00:00.000Z-AAA": json1])
+        XCTAssertEqual(model.strokeMap.count, 1)
+
+        // Updating with a new map replaces state entirely
+        model.updateFromStrokesMap([:])
+        XCTAssertTrue(model.strokeMap.isEmpty)
+        XCTAssertTrue(model.creationDateToKey.isEmpty)
+        XCTAssertTrue(model.keyToCreationDate.isEmpty)
+    }
+
     // MARK: - Serialization Tests
 
     func testRoundTripStrokePreservesContent() {

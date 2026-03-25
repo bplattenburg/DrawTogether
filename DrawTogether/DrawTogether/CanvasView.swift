@@ -58,8 +58,6 @@ struct CanvasView: UIViewRepresentable {
             let (inserts, removes) = model.diff(currentStrokes: canvasView.drawing.strokes)
             guard !inserts.isEmpty || !removes.isEmpty else { return }
 
-            model.apply(inserts: inserts, removes: removes)
-
             let drawingID = model.drawingID
             Task {
                 do {
@@ -76,12 +74,17 @@ struct CanvasView: UIViewRepresentable {
 
                         for key in removes {
                             try await transaction.execute(
-                                query: "UPDATE drawings UNSET strokes.\(key) WHERE _id = :drawingID",
-                                arguments: ["drawingID": drawingID]
+                                query: "UPDATE drawings UNSET strokes[:strokeKey] WHERE _id = :drawingID",
+                                arguments: ["drawingID": drawingID, "strokeKey": key]
                             )
                         }
 
                         return .commit
+                    }
+
+                    // Apply local state only after transaction commits successfully
+                    await MainActor.run {
+                        self.model.apply(inserts: inserts, removes: removes)
                     }
                 } catch {
                     print("Error syncing strokes: \(error)")
@@ -90,22 +93,24 @@ struct CanvasView: UIViewRepresentable {
         }
 
         func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
-            // Parse the strokes MAP from the Ditto result
+            guard let item = result.items.first,
+                  let rawMap = item.value["strokes"] as? [String: Any] else {
+                return
+            }
+
             var strokesMap: [String: String] = [:]
-            if let item = result.items.first,
-               let rawMap = item.value["strokes"] as? [String: Any] {
-                for (key, value) in rawMap {
-                    if let strokeString = value as? String {
-                        strokesMap[key] = strokeString
-                    }
+            for (key, value) in rawMap {
+                if let strokeString = value as? String {
+                    strokesMap[key] = strokeString
                 }
             }
 
-            model.updateFromStrokesMap(strokesMap)
-            isUpdatingFromDitto = true
-            parent.drawing = model.drawing()
             DispatchQueue.main.async { [weak self] in
-                self?.isUpdatingFromDitto = false
+                guard let self = self else { return }
+                self.model.updateFromStrokesMap(strokesMap)
+                self.isUpdatingFromDitto = true
+                self.parent.drawing = self.model.drawing()
+                self.isUpdatingFromDitto = false
             }
         }
     }
