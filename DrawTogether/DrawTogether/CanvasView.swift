@@ -18,6 +18,7 @@ struct CanvasView: UIViewRepresentable {
         canvasView.drawing = drawing
         canvasView.delegate = context.coordinator
         canvasView.drawingPolicy = .anyInput // Allows drawing with finger or Apple Pencil
+        context.coordinator.canvasView = canvasView
         return canvasView
     }
 
@@ -41,25 +42,51 @@ struct CanvasView: UIViewRepresentable {
         var observer: DittoStoreObserver?
         var model = DittoDrawingModel()
         var isUpdatingFromDitto = false
+        weak var canvasView: PKCanvasView?
+
+        /// Debounce task for outbound sync — cancelled and recreated on each drawing change
+        private var syncTask: Task<Void, Never>?
+
+        /// Debounce interval for coalescing rapid drawing changes
+        private let syncDebounceNanoseconds: UInt64 = 100_000_000 // 100ms
 
         init(_ parent: CanvasView) {
             self.parent = parent
             super.init()
-            observer = try? DittoManager.shared?.ditto?.store.registerObserver(query: "SELECT * FROM drawings", handler: updateFromDitto(_:))
+            // Observer filtered by drawingID so .first always matches
+            observer = try? DittoManager.shared?.ditto?.store.registerObserver(
+                query: "SELECT * FROM drawings WHERE _id = :drawingID",
+                arguments: ["drawingID": model.drawingID],
+                handler: updateFromDitto(_:)
+            )
         }
 
         deinit {
+            syncTask?.cancel()
             observer?.cancel()
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isUpdatingFromDitto else { return }
 
-            let (inserts, removes) = model.diff(currentStrokes: canvasView.drawing.strokes)
-            guard !inserts.isEmpty || !removes.isEmpty else { return }
+            // Cancel any in-flight sync and debounce
+            syncTask?.cancel()
+            syncTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(nanoseconds: self?.syncDebounceNanoseconds ?? 0)
+                } catch {
+                    return // Task was cancelled
+                }
+                guard let self = self, !self.isUpdatingFromDitto else { return }
 
-            let drawingID = model.drawingID
-            Task {
+                // Read current canvas strokes at debounce fire time (not capture time)
+                // to ensure we have the latest state including any Ditto updates
+                guard let currentStrokes = self.canvasView?.drawing.strokes else { return }
+
+                let (inserts, removes) = self.model.diff(currentStrokes: currentStrokes)
+                guard !inserts.isEmpty || !removes.isEmpty else { return }
+
+                let drawingID = self.model.drawingID
                 do {
                     guard let ditto = DittoManager.shared?.ditto else { return }
 
@@ -75,26 +102,24 @@ struct CanvasView: UIViewRepresentable {
 
                         for key in removes {
                             try await transaction.execute(
-                                query: "UPDATE drawings UNSET strokes[:strokeKey] WHERE _id = :drawingID",
-                                arguments: ["drawingID": drawingID, "strokeKey": key]
+                                query: "UPDATE drawings UNSET strokes.`\(key)` WHERE _id = :drawingID",
+                                arguments: ["drawingID": drawingID]
                             )
                         }
 
                         return .commit
                     }
 
-                    // Apply local state only after transaction commits successfully
-                    await MainActor.run {
-                        self.model.apply(inserts: inserts, removes: removes)
-                    }
+                    self.model.apply(inserts: inserts, removes: removes)
                 } catch {
-                    print("Error syncing strokes: \(error)")
+                    NSLog("Error syncing strokes: %@", "\(error)")
                 }
             }
         }
 
         func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
-            guard let item = result.items.first(where: { ($0.value["_id"] as? String) == model.drawingID }),
+            // Observer is filtered by drawingID, so .first always matches
+            guard let item = result.items.first,
                   let rawMap = item.value["strokes"] as? [String: Any] else {
                 return
             }
@@ -106,13 +131,25 @@ struct CanvasView: UIViewRepresentable {
                 }
             }
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.model.updateFromStrokesMap(strokesMap)
-                self.isUpdatingFromDitto = true
-                self.parent.drawing = self.model.drawing()
-                self.isUpdatingFromDitto = false
+            // Cancel any pending sync — will be re-triggered if there are uncommitted local strokes
+            syncTask?.cancel()
+
+            // Preserve uncommitted local strokes that haven't been synced to Ditto yet
+            let knownDates = Set(model.creationDateToKey.keys)
+            let uncommittedStrokes = parent.drawing.strokes.filter { !knownDates.contains($0.path.creationDate) }
+
+            model.updateFromStrokesMap(strokesMap)
+
+            // Merge Ditto strokes with any uncommitted local strokes
+            var strokes = model.drawing().strokes
+            if !uncommittedStrokes.isEmpty {
+                strokes.append(contentsOf: uncommittedStrokes)
+                strokes.sort { $0.path.creationDate < $1.path.creationDate }
             }
+
+            isUpdatingFromDitto = true
+            parent.drawing = PKDrawing(strokes: strokes)
+            isUpdatingFromDitto = false
         }
     }
 }

@@ -7,16 +7,9 @@
 
 import Foundation
 import PencilKit
-import CryptoKit
 
-extension ISO8601DateFormatter {
-    static let fractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-}
-
+/// Manages the sync state for a single drawing document in Ditto.
+/// Tracks which strokes are known (synced) and provides diffing to detect local changes.
 struct DittoDrawingModel {
     let drawingID: String
 
@@ -33,30 +26,17 @@ struct DittoDrawingModel {
         self.drawingID = drawingID
     }
 
-    // MARK: - Key Generation
-
-    /// Generates a deterministic key from a stroke's creation date and its encoded content.
-    /// The same stroke always produces the same key, preventing duplicate inserts.
-    func generateKey(for date: Date, encodedData: Data) -> String {
-        let timestamp = ISO8601DateFormatter.fractional.string(from: date)
-        let hash = SHA256.hash(data: encodedData)
-        let hashString = hash.prefix(16).map { String(format: "%02x", $0) }.joined()
-        return "\(timestamp)-\(hashString)"
-    }
-
     // MARK: - Drawing Reconstruction
 
     /// Rebuilds a PKDrawing from strokeMap by sorting keys lexicographically (chronological z-order)
     func drawing() -> PKDrawing {
         let sortedKeys = strokeMap.keys.sorted()
         let strokes: [PKStroke] = sortedKeys.compactMap { key in
-            guard let json = strokeMap[key],
-                  let data = json.data(using: .utf8) else {
-                NSLog("DittoDrawingModel.drawing(): Missing or invalid UTF-8 data for stroke key: %@", key)
+            guard let json = strokeMap[key] else {
+                NSLog("DittoDrawingModel.drawing(): Missing data for stroke key: %@", key)
                 return nil
             }
-            guard let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data),
-                  let stroke = wrapper.strokes.first else {
+            guard let stroke = DittoStrokeModel.decode(from: json) else {
                 NSLog("DittoDrawingModel.drawing(): Failed to decode stroke for key: %@", key)
                 return nil
             }
@@ -73,9 +53,7 @@ struct DittoDrawingModel {
         creationDateToKey = [:]
         keyToCreationDate = [:]
         for (key, json) in map {
-            if let data = json.data(using: .utf8),
-               let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data),
-               let stroke = wrapper.strokes.first {
+            if let stroke = DittoStrokeModel.decode(from: json) {
                 creationDateToKey[stroke.path.creationDate] = key
                 keyToCreationDate[key] = stroke.path.creationDate
             }
@@ -95,11 +73,9 @@ struct DittoDrawingModel {
         // Strokes in canvas but not known -> new
         var inserts: [String: String] = [:]
         for stroke in currentStrokes where !knownDates.contains(stroke.path.creationDate) {
-            let wrapper = PKDrawing(strokes: [stroke])
-            guard let data = try? JSONEncoder().encode(wrapper),
-                  let json = String(data: data, encoding: .utf8) else { continue }
-            let key = generateKey(for: stroke.path.creationDate, encodedData: data)
-            inserts[key] = json
+            guard let encoded = DittoStrokeModel.encode(stroke) else { continue }
+            let key = DittoStrokeModel.generateKey(for: stroke.path.creationDate, encodedData: encoded.data)
+            inserts[key] = encoded.json
             // Persist key mapping immediately to prevent duplicate inserts on repeated calls
             creationDateToKey[stroke.path.creationDate] = key
             keyToCreationDate[key] = stroke.path.creationDate
@@ -124,9 +100,7 @@ struct DittoDrawingModel {
         }
         for (key, json) in inserts {
             strokeMap[key] = json
-            if let data = json.data(using: .utf8),
-               let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data),
-               let stroke = wrapper.strokes.first {
+            if let stroke = DittoStrokeModel.decode(from: json) {
                 creationDateToKey[stroke.path.creationDate] = key
                 keyToCreationDate[key] = stroke.path.creationDate
             }
