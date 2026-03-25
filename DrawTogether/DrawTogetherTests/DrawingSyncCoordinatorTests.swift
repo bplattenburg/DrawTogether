@@ -58,18 +58,40 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         return result.items.first?.value["strokes"] as? [String: Any] ?? [:]
     }
 
-    /// Triggers a canvas drawing change and waits for the async sync to complete
-    private func triggerSyncAndWait() async throws {
-        coordinator.canvasViewDrawingDidChange(canvasView)
+    /// Triggers a canvas drawing change and waits for Ditto to reach the expected stroke count.
+    /// Uses a Ditto store observer to fulfill the expectation — no timers or polling.
+    private func triggerSyncAndWaitForDitto(expectedStrokeCount: Int, timeout: TimeInterval = 5.0) async throws {
+        let exp = expectation(description: "Ditto has \(expectedStrokeCount) strokes")
 
-        // Wait for the async work to complete using an XCTestExpectation instead of a fixed sleep.
-        // We schedule fulfillment after ~50ms (matching the original delay) but enforce a clear timeout.
-        let expectation = expectation(description: "Wait for drawing sync to complete")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            expectation.fulfill()
+        let observer = try ditto.store.registerObserver(
+            query: "SELECT * FROM drawings WHERE _id = :id",
+            arguments: ["id": coordinator.model.drawingID]
+        ) { result in
+            guard let item = result.items.first,
+                  let strokes = item.value["strokes"] as? [String: Any],
+                  strokes.count == expectedStrokeCount else { return }
+            exp.fulfill()
         }
 
-        await fulfillment(of: [expectation], timeout: 1.0)
+        coordinator.canvasViewDrawingDidChange(canvasView)
+        await fulfillment(of: [exp], timeout: timeout)
+        observer.cancel()
+    }
+
+    /// Waits for the coordinator's model to reach the expected stroke count.
+    /// Hooks into the coordinator's onModelUpdate callback — no separate observers, timers, or polling.
+    private func waitForModel(strokeCount: Int, timeout: TimeInterval = 5.0) async {
+        // If already at expected count, return immediately
+        guard coordinator.model.strokeMap.count != strokeCount else { return }
+
+        let exp = expectation(description: "Model has \(strokeCount) strokes")
+        coordinator.onModelUpdate = { [weak self] in
+            guard let self, self.coordinator.model.strokeMap.count == strokeCount else { return }
+            exp.fulfill()
+            self.coordinator.onModelUpdate = nil
+        }
+
+        await fulfillment(of: [exp], timeout: timeout)
     }
 
     // MARK: - Outbound Sync Tests
@@ -78,10 +100,7 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         canvasView.drawing = PKDrawing(strokes: [stroke])
 
-        try await triggerSyncAndWait()
-
-        let strokesMap = try await queryStrokesMap()
-        XCTAssertEqual(strokesMap.count, 1, "One stroke should be synced to Ditto")
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
     }
 
     func testMultipleStrokesSyncInBatch() async throws {
@@ -90,10 +109,7 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         let stroke3 = makeStroke(at: CGPoint(x: 90, y: 90), creationDate: Date(timeIntervalSince1970: 3000))
         canvasView.drawing = PKDrawing(strokes: [stroke1, stroke2, stroke3])
 
-        try await triggerSyncAndWait()
-
-        let strokesMap = try await queryStrokesMap()
-        XCTAssertEqual(strokesMap.count, 3, "All three strokes should be synced")
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 3)
     }
 
     func testRemovedStrokesUnsetFromDitto() async throws {
@@ -102,17 +118,11 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         // Sync both strokes
         canvasView.drawing = PKDrawing(strokes: [stroke1, stroke2])
-        try await triggerSyncAndWait()
-
-        let before = try await queryStrokesMap()
-        XCTAssertEqual(before.count, 2)
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 2)
 
         // Remove stroke1 from canvas, keep stroke2
         canvasView.drawing = PKDrawing(strokes: [stroke2])
-        try await triggerSyncAndWait()
-
-        let after = try await queryStrokesMap()
-        XCTAssertEqual(after.count, 1, "Only one stroke should remain after removal")
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
     }
 
     func testMixedInsertAndRemoveInSingleSync() async throws {
@@ -121,15 +131,12 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         // Sync stroke1 and stroke2
         canvasView.drawing = PKDrawing(strokes: [stroke1, stroke2])
-        try await triggerSyncAndWait()
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 2)
 
         // Replace stroke1 with stroke3, keep stroke2
         let stroke3 = makeStroke(at: CGPoint(x: 90, y: 90), creationDate: Date(timeIntervalSince1970: 3000))
         canvasView.drawing = PKDrawing(strokes: [stroke2, stroke3])
-        try await triggerSyncAndWait()
-
-        let strokesMap = try await queryStrokesMap()
-        XCTAssertEqual(strokesMap.count, 2, "Should have stroke2 and stroke3, not stroke1")
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 2)
     }
 
     // MARK: - Inbound Sync Tests
@@ -138,7 +145,7 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         // Sync a stroke through the coordinator first
         let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         canvasView.drawing = PKDrawing(strokes: [stroke1])
-        try await triggerSyncAndWait()
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
 
         XCTAssertEqual(coordinator.model.strokeMap.count, 1)
 
@@ -155,14 +162,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
             arguments: ["doc": doc]
         )
 
-        // Wait for observer to fire and update the model
-        let observerExpectation = expectation(description: "Wait for observer to update model")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            observerExpectation.fulfill()
-        }
-        await fulfillment(of: [observerExpectation], timeout: 2.0)
-
-        XCTAssertEqual(coordinator.model.strokeMap.count, 2, "Model should include both local and remote strokes")
+        // Wait for the coordinator's observer to update the model
+        await waitForModel(strokeCount: 2)
     }
 
     // MARK: - Round-Trip Tests
@@ -172,24 +173,16 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         let stroke2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: Date(timeIntervalSince1970: 2000))
         canvasView.drawing = PKDrawing(strokes: [stroke1, stroke2])
-        try await triggerSyncAndWait()
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 2)
 
-        // 2. Verify Ditto has both
-        var strokesMap = try await queryStrokesMap()
-        XCTAssertEqual(strokesMap.count, 2)
-
-        // 3. Verify model can reconstruct a drawing with correct stroke count
+        // 2. Verify model can reconstruct a drawing with correct stroke count
         XCTAssertEqual(coordinator.model.drawing().strokes.count, 2)
 
-        // 4. Remove one stroke and sync
+        // 3. Remove one stroke and sync
         canvasView.drawing = PKDrawing(strokes: [stroke2])
-        try await triggerSyncAndWait()
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
 
-        // 5. Verify Ditto has one
-        strokesMap = try await queryStrokesMap()
-        XCTAssertEqual(strokesMap.count, 1)
-
-        // 6. Verify model has one
+        // 4. Verify model has one
         XCTAssertEqual(coordinator.model.drawing().strokes.count, 1)
     }
 }

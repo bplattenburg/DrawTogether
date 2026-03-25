@@ -16,8 +16,14 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     var parent: CanvasView
     var toolPicker: PKToolPicker?
     var observer: DittoStoreObserver?
-    var model = DittoDrawingModel()
+    var model = DittoDrawingModel() {
+        didSet { onModelUpdate?() }
+    }
     var isUpdatingFromDitto = false
+
+    /// Optional callback invoked after the model is updated (e.g., after inbound sync).
+    /// Used by tests to fulfill expectations without timers or polling.
+    var onModelUpdate: (() -> Void)?
     weak var canvasView: PKCanvasView?
 
     /// The Ditto instance used for sync. Injected for testability.
