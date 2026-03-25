@@ -14,7 +14,10 @@ import PencilKit
 /// uniquely when a stroke is drawn, giving deterministic and chronologically sortable keys.
 struct DittoStrokeModel {
 
-    /// Encodes a PKStroke as a JSON string (via single-stroke PKDrawing wrapper)
+    /// Encodes a PKStroke as a JSON string (via single-stroke PKDrawing wrapper).
+    /// Note: JSON encoding via PKDrawing's Codable conformance may not preserve the `mask` property
+    /// set by the bitmap eraser. The official persistence path is `PKDrawing.dataRepresentation()`.
+    /// See: https://github.com/bplattenburg/DrawTogether/issues/8
     static func encode(_ stroke: PKStroke) -> String? {
         let wrapper = PKDrawing(strokes: [stroke])
         guard let data = try? JSONEncoder().encode(wrapper) else { return nil }

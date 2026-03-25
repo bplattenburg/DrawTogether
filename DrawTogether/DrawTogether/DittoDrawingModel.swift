@@ -70,11 +70,12 @@ struct DittoDrawingModel {
     /// returned key mappings via `persistPendingKeys`.
     ///
     /// Strokes are identified by `PKStrokePath.creationDate`, which PencilKit assigns uniquely when
-    /// a stroke is drawn. This is the only stable identifier available — PKStroke is not Codable and
-    /// PKDrawing's JSON encoding is non-deterministic across calls, so content hashing cannot reliably
-    /// detect "same stroke" across multiple diff invocations. In practice this is correct because
-    /// PencilKit strokes are immutable after creation; modifications (e.g. eraser) produce new strokes
-    /// with new creation dates.
+    /// a stroke is drawn. This only detects new and removed strokes — in-place modifications to
+    /// existing strokes (same creationDate, different content) are not detected.
+    ///
+    /// Known limitation: the bitmap eraser sets a `mask` on existing strokes without changing their
+    /// creationDate, so eraser changes are not synced. The vector eraser works correctly because it
+    /// removes/splits strokes, producing new creationDates. See: https://github.com/bplattenburg/DrawTogether/issues/8
     static func computeDiff(
         currentStrokes: [PKStroke],
         knownCreationDateToKey: [Date: String]
