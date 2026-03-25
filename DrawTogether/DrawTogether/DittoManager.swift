@@ -8,7 +8,13 @@
 import DittoSwift
 
 final class DittoManager {
-    static let shared = try? DittoManager()
+    static let shared: DittoManager = {
+        do {
+            return try DittoManager()
+        } catch {
+            fatalError("DittoManager initialization failed: \(error)")
+        }
+    }()
 
     public let ditto: Ditto
 

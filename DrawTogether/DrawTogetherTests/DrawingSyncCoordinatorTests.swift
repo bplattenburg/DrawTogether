@@ -155,8 +155,12 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
             arguments: ["doc": doc]
         )
 
-        // Wait for observer to fire (delivered on main queue)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // Wait for observer to fire and update the model
+        let observerExpectation = expectation(description: "Wait for observer to update model")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            observerExpectation.fulfill()
+        }
+        await fulfillment(of: [observerExpectation], timeout: 2.0)
 
         XCTAssertEqual(coordinator.model.strokeMap.count, 2, "Model should include both local and remote strokes")
     }

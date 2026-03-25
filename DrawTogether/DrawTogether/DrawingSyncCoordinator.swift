@@ -29,7 +29,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     /// Debounce interval for coalescing rapid drawing changes
     let syncDebounceNanoseconds: UInt64
 
-    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared!.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000) {
+    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000) {
         self.parent = parent
         self.ditto = ditto
         self.syncDebounceNanoseconds = syncDebounceNanoseconds
