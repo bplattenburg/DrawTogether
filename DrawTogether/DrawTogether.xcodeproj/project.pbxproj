@@ -59,6 +59,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A4A6DA4A2E873258001228BF /* Build configuration list for PBXNativeTarget "DrawTogether" */;
 			buildPhases = (
+				A4A6DA602E873500001228BF /* Generate Env.swift from .env */,
 				A4A6DA382E873256001228BF /* Sources */,
 				A4A6DA392E873256001228BF /* Frameworks */,
 				A4A6DA3A2E873256001228BF /* Resources */,
@@ -126,6 +127,26 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		A4A6DA602E873500001228BF /* Generate Env.swift from .env */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../.env",
+				"$(SRCROOT)/buildEnv.sh",
+			);
+			name = "Generate Env.swift from .env";
+			outputPaths = (
+				"$(SRCROOT)/DrawTogether/Env.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/buildEnv.sh\" \"$SRCROOT/../.env\" \"$SRCROOT/DrawTogether\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A4A6DA382E873256001228BF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -174,7 +195,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -237,7 +258,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
