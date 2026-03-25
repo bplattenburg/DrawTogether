@@ -35,11 +35,16 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
         self.syncDebounceNanoseconds = syncDebounceNanoseconds
         super.init()
         // Observer filtered by drawingID so .first always matches
-        observer = try? ditto.store.registerObserver(
-            query: "SELECT * FROM drawings WHERE _id = :drawingID",
-            arguments: ["drawingID": model.drawingID],
-            handler: updateFromDitto(_:)
-        )
+        do {
+            observer = try ditto.store.registerObserver(
+                query: "SELECT * FROM drawings WHERE _id = :drawingID",
+                arguments: ["drawingID": model.drawingID],
+                handler: updateFromDitto(_:)
+            )
+        } catch {
+            NSLog("Failed to register Ditto observer for drawingID %@: %@", model.drawingID, "\(error)")
+            fatalError("DrawingSyncCoordinator failed to register Ditto observer: \(error)")
+        }
     }
 
     deinit {
