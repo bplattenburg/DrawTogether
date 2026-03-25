@@ -1,5 +1,5 @@
 //
-//  DittoDQLIntegrationTests.swift
+//  DrawingSyncCoordinatorTests.swift
 //  DrawTogetherTests
 //
 //  Created by Brian Plattenburg on 3/25/26.
@@ -10,13 +10,13 @@ import PencilKit
 import DittoSwift
 @testable import DrawTogether
 
-/// Integration tests that exercise the full Coordinator sync flow against a real local Ditto instance.
+/// Integration tests that exercise the full DrawingSyncCoordinator flow against a real local Ditto instance.
 /// Uses offline playground identity with no sync started.
 @MainActor
-final class DittoDQLIntegrationTests: XCTestCase {
+final class DrawingSyncCoordinatorTests: XCTestCase {
 
     private var ditto: Ditto!
-    private var coordinator: CanvasView.Coordinator!
+    private var coordinator: DrawingSyncCoordinator!
     private var canvasView: PKCanvasView!
 
     override func setUp() async throws {
@@ -27,7 +27,7 @@ final class DittoDQLIntegrationTests: XCTestCase {
 
         // Create coordinator with injected test Ditto and no debounce delay
         let parent = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil))
-        coordinator = CanvasView.Coordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0)
+        coordinator = DrawingSyncCoordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0)
 
         canvasView = PKCanvasView()
         coordinator.canvasView = canvasView
