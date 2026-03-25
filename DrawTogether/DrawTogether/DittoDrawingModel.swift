@@ -13,7 +13,7 @@ import PencilKit
 struct DittoDrawingModel {
     let drawingID: String
 
-    /// Maps Ditto key (ISO8601+hash) to JSON-encoded single-stroke PKDrawing
+    /// Maps Ditto key (ISO8601 timestamp string) to JSON-encoded single-stroke PKDrawing
     private(set) var strokeMap: [String: String] = [:]
 
     /// Maps stroke creation date to Ditto key, for stable diffing
