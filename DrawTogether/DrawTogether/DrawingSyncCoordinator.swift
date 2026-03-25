@@ -65,17 +65,21 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
             }
 
             // Capture current state on main
-            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto)? in
+            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto, knownCreationDateToKey: [Date: String])? in
                 guard let self, !self.isUpdatingFromDitto,
                       let strokes = self.canvasView?.drawing.strokes else { return nil }
-                return (strokes: strokes, drawingID: self.model.drawingID, ditto: self.ditto)
+                return (strokes: strokes, drawingID: self.model.drawingID, ditto: self.ditto, knownCreationDateToKey: self.model.creationDateToKey)
             }) else { return }
 
-            // Diff on main (mutates model to persist key mappings)
-            let (inserts, removes) = await MainActor.run {
-                self?.model.diff(currentStrokes: syncContext.strokes) ?? ([:], [])
-            }
+            // Diff off main — encoding can be CPU-intensive for many strokes
+            let (inserts, removes, newMappings) = DittoDrawingModel.computeDiff(
+                currentStrokes: syncContext.strokes,
+                knownCreationDateToKey: syncContext.knownCreationDateToKey
+            )
             guard !inserts.isEmpty || !removes.isEmpty else { return }
+
+            // Persist key mappings on main to prevent duplicate inserts on repeated diffs
+            await MainActor.run { self?.model.persistPendingKeys(newMappings) }
 
             // Run Ditto transaction off main
             do {
@@ -109,8 +113,16 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     }
 
     func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
+        // Observer callback may fire on any thread; dispatch to main for UIKit/SwiftUI safety
+        let items = result.items
+        DispatchQueue.main.async { [weak self] in
+            self?.handleDittoUpdate(items: items)
+        }
+    }
+
+    private func handleDittoUpdate(items: [DittoSwift.DittoQueryResultItem]) {
         // Observer is filtered by drawingID, so .first always matches
-        guard let item = result.items.first,
+        guard let item = items.first,
               let rawMap = item.value["strokes"] as? [String: Any] else {
             return
         }

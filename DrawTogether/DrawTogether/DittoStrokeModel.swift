@@ -29,8 +29,11 @@ struct DittoStrokeModel {
     }
 
     /// Generates a deterministic, sortable key from a stroke's creation date.
-    /// ISO8601 with fractional seconds ensures lexicographic sort = chronological order.
-    /// PencilKit assigns unique creation dates per stroke, so no additional disambiguation is needed.
+    /// ISO8601 with fractional seconds (millisecond precision) ensures lexicographic sort = chronological order.
+    /// Collisions require two strokes created within the same millisecond, which is practically impossible:
+    /// each stroke requires physical drawing input that far exceeds 1ms, and PencilKit serializes stroke
+    /// creation on the main thread. Cross-device collisions at the same millisecond would merge via
+    /// Ditto's MAP CRDT (last-write-wins per key), not cause data loss.
     static func generateKey(for date: Date) -> String {
         ISO8601DateFormatter.fractional.string(from: date)
     }

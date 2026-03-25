@@ -34,11 +34,12 @@ final class DittoDrawingModelTests: XCTestCase {
         var model = DittoDrawingModel()
         let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
 
-        let (inserts1, _) = model.diff(currentStrokes: [stroke])
-        let (inserts2, _) = model.diff(currentStrokes: [stroke])
+        let result1 = DittoDrawingModel.computeDiff(currentStrokes: [stroke], knownCreationDateToKey: model.creationDateToKey)
+        model.persistPendingKeys(result1.newMappings)
+        let result2 = DittoDrawingModel.computeDiff(currentStrokes: [stroke], knownCreationDateToKey: model.creationDateToKey)
 
-        XCTAssertEqual(inserts1.count, 1, "First diff should detect 1 new stroke")
-        XCTAssertTrue(inserts2.isEmpty, "Second diff should produce no inserts — key was persisted on first call")
+        XCTAssertEqual(result1.inserts.count, 1, "First diff should detect 1 new stroke")
+        XCTAssertTrue(result2.inserts.isEmpty, "Second diff should produce no inserts — key was persisted on first call")
     }
 
     // MARK: - Drawing Reconstruction Tests
@@ -94,10 +95,10 @@ final class DittoDrawingModelTests: XCTestCase {
         // Canvas now has existing stroke + a new stroke with a different creation date
         let newDate = Date(timeIntervalSince1970: 2000)
         let newStroke = makeStroke(at: CGPoint(x: 200, y: 200), creationDate: newDate)
-        let (inserts, removes) = model.diff(currentStrokes: [existingStroke, newStroke])
+        let result = DittoDrawingModel.computeDiff(currentStrokes: [existingStroke, newStroke], knownCreationDateToKey: model.creationDateToKey)
 
-        XCTAssertEqual(inserts.count, 1, "Should detect 1 new stroke")
-        XCTAssertTrue(removes.isEmpty, "Should not detect any removals")
+        XCTAssertEqual(result.inserts.count, 1, "Should detect 1 new stroke")
+        XCTAssertTrue(result.removes.isEmpty, "Should not detect any removals")
     }
 
     func testDiffDetectsMixedChanges() {
@@ -120,11 +121,11 @@ final class DittoDrawingModelTests: XCTestCase {
         // Remove stroke2, add stroke3
         let date3 = Date(timeIntervalSince1970: 3000)
         let stroke3 = makeStroke(at: CGPoint(x: 200, y: 200), creationDate: date3)
-        let (inserts, removes) = model.diff(currentStrokes: [stroke1, stroke3])
+        let result = DittoDrawingModel.computeDiff(currentStrokes: [stroke1, stroke3], knownCreationDateToKey: model.creationDateToKey)
 
-        XCTAssertEqual(inserts.count, 1, "Should detect 1 new stroke")
-        XCTAssertEqual(removes.count, 1, "Should detect 1 removal")
-        XCTAssertEqual(removes.first, "2026-03-25T12:00:01.000Z")
+        XCTAssertEqual(result.inserts.count, 1, "Should detect 1 new stroke")
+        XCTAssertEqual(result.removes.count, 1, "Should detect 1 removal")
+        XCTAssertEqual(result.removes.first, "2026-03-25T12:00:01.000Z")
     }
 
     func testDiffDetectsRemovedStrokes() {
@@ -145,11 +146,11 @@ final class DittoDrawingModelTests: XCTestCase {
         ])
 
         // Canvas only has stroke1, stroke2 was removed
-        let (inserts, removes) = model.diff(currentStrokes: [stroke1])
+        let result = DittoDrawingModel.computeDiff(currentStrokes: [stroke1], knownCreationDateToKey: model.creationDateToKey)
 
-        XCTAssertTrue(inserts.isEmpty, "Should not detect any inserts")
-        XCTAssertEqual(removes.count, 1, "Should detect 1 removal")
-        XCTAssertEqual(removes.first, "2026-03-25T12:00:01.000Z-BBB")
+        XCTAssertTrue(result.inserts.isEmpty, "Should not detect any inserts")
+        XCTAssertEqual(result.removes.count, 1, "Should detect 1 removal")
+        XCTAssertEqual(result.removes.first, "2026-03-25T12:00:01.000Z-BBB")
     }
 
     // MARK: - Apply Tests
@@ -180,9 +181,9 @@ final class DittoDrawingModelTests: XCTestCase {
         XCTAssertNil(model.strokeMap["2026-03-25T12:00:00.000Z-AAA"])
 
         // Subsequent diff against the same strokes should produce no changes
-        let (inserts, removes) = model.diff(currentStrokes: [stroke2])
-        XCTAssertTrue(inserts.isEmpty, "No inserts expected after apply")
-        XCTAssertTrue(removes.isEmpty, "No removes expected after apply")
+        let result = DittoDrawingModel.computeDiff(currentStrokes: [stroke2], knownCreationDateToKey: model.creationDateToKey)
+        XCTAssertTrue(result.inserts.isEmpty, "No inserts expected after apply")
+        XCTAssertTrue(result.removes.isEmpty, "No removes expected after apply")
     }
 
     func testApplyKeepsReverseMapsConsistent() {
@@ -231,19 +232,20 @@ final class DittoDrawingModelTests: XCTestCase {
         let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
 
         // First diff persists key mappings optimistically
-        let (inserts1, _) = model.diff(currentStrokes: [stroke])
-        XCTAssertEqual(inserts1.count, 1)
+        let result1 = DittoDrawingModel.computeDiff(currentStrokes: [stroke], knownCreationDateToKey: model.creationDateToKey)
+        model.persistPendingKeys(result1.newMappings)
+        XCTAssertEqual(result1.inserts.count, 1)
 
         // Second diff sees stroke as known — no inserts
-        let (inserts2, _) = model.diff(currentStrokes: [stroke])
-        XCTAssertTrue(inserts2.isEmpty)
+        let result2 = DittoDrawingModel.computeDiff(currentStrokes: [stroke], knownCreationDateToKey: model.creationDateToKey)
+        XCTAssertTrue(result2.inserts.isEmpty)
 
         // Rollback simulates a failed transaction
-        model.rollbackPendingKeys(inserts: inserts1)
+        model.rollbackPendingKeys(inserts: result1.inserts)
 
         // After rollback, the stroke should be detected as new again
-        let (inserts3, _) = model.diff(currentStrokes: [stroke])
-        XCTAssertEqual(inserts3.count, 1, "Stroke should be re-detected after rollback")
+        let result3 = DittoDrawingModel.computeDiff(currentStrokes: [stroke], knownCreationDateToKey: model.creationDateToKey)
+        XCTAssertEqual(result3.inserts.count, 1, "Stroke should be re-detected after rollback")
     }
 
     func testUpdateFromStrokesMapClearsStateOnEmptyMap() {

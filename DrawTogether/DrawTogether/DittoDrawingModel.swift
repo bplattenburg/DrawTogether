@@ -62,8 +62,12 @@ struct DittoDrawingModel {
 
     // MARK: - Diffing
 
-    /// Compares current canvas strokes against known state using creation dates as stable identifiers.
-    /// Returns inserts (key -> JSON string) and removes (keys to UNSET).
+    /// Compares current canvas strokes against a snapshot of known state using creation dates as
+    /// stable identifiers. Returns inserts (key -> JSON string) and removes (keys to UNSET).
+    ///
+    /// This is a pure function that can run off the main thread — it takes a snapshot of known
+    /// dates/keys rather than reading from `self`. The caller is responsible for persisting the
+    /// returned key mappings via `persistPendingKeys`.
     ///
     /// Strokes are identified by `PKStrokePath.creationDate`, which PencilKit assigns uniquely when
     /// a stroke is drawn. This is the only stable identifier available — PKStroke is not Codable and
@@ -71,28 +75,35 @@ struct DittoDrawingModel {
     /// detect "same stroke" across multiple diff invocations. In practice this is correct because
     /// PencilKit strokes are immutable after creation; modifications (e.g. eraser) produce new strokes
     /// with new creation dates.
-    ///
-    /// Mutating: immediately persists key mappings for new strokes so repeated calls
-    /// before apply() won't generate duplicate keys.
-    mutating func diff(currentStrokes: [PKStroke]) -> (inserts: [String: String], removes: [String]) {
+    static func computeDiff(
+        currentStrokes: [PKStroke],
+        knownCreationDateToKey: [Date: String]
+    ) -> (inserts: [String: String], removes: [String], newMappings: [(date: Date, key: String)]) {
         let currentDates = Set(currentStrokes.map { $0.path.creationDate })
-        let knownDates = Set(creationDateToKey.keys)
+        let knownDates = Set(knownCreationDateToKey.keys)
 
         // Strokes in canvas but not known -> new
         var inserts: [String: String] = [:]
+        var newMappings: [(date: Date, key: String)] = []
         for stroke in currentStrokes where !knownDates.contains(stroke.path.creationDate) {
             guard let json = DittoStrokeModel.encode(stroke) else { continue }
             let key = DittoStrokeModel.generateKey(for: stroke.path.creationDate)
             inserts[key] = json
-            // Persist key mapping immediately to prevent duplicate inserts on repeated calls
-            creationDateToKey[stroke.path.creationDate] = key
-            keyToCreationDate[key] = stroke.path.creationDate
+            newMappings.append((date: stroke.path.creationDate, key: key))
         }
 
         // Strokes known but not in canvas -> removed
-        let removes = knownDates.subtracting(currentDates).compactMap { creationDateToKey[$0] }
+        let removes = knownDates.subtracting(currentDates).compactMap { knownCreationDateToKey[$0] }
 
-        return (inserts: inserts, removes: removes)
+        return (inserts: inserts, removes: removes, newMappings: newMappings)
+    }
+
+    /// Persists key mappings from a `computeDiff` result so repeated diffs won't generate duplicates.
+    mutating func persistPendingKeys(_ mappings: [(date: Date, key: String)]) {
+        for mapping in mappings {
+            creationDateToKey[mapping.date] = mapping.key
+            keyToCreationDate[mapping.key] = mapping.date
+        }
     }
 
     // MARK: - Apply Changes
