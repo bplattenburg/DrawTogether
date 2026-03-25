@@ -44,17 +44,22 @@ struct CanvasView: UIViewRepresentable {
         var isUpdatingFromDitto = false
         weak var canvasView: PKCanvasView?
 
+        /// The Ditto instance used for sync. Injected for testability.
+        let ditto: Ditto?
+
         /// Debounce task for outbound sync — cancelled and recreated on each drawing change
         private var syncTask: Task<Void, Never>?
 
         /// Debounce interval for coalescing rapid drawing changes
-        private let syncDebounceNanoseconds: UInt64 = 100_000_000 // 100ms
+        let syncDebounceNanoseconds: UInt64
 
-        init(_ parent: CanvasView) {
+        init(_ parent: CanvasView, ditto: Ditto? = DittoManager.shared?.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000) {
             self.parent = parent
+            self.ditto = ditto
+            self.syncDebounceNanoseconds = syncDebounceNanoseconds
             super.init()
             // Observer filtered by drawingID so .first always matches
-            observer = try? DittoManager.shared?.ditto?.store.registerObserver(
+            observer = try? ditto?.store.registerObserver(
                 query: "SELECT * FROM drawings WHERE _id = :drawingID",
                 arguments: ["drawingID": model.drawingID],
                 handler: updateFromDitto(_:)
@@ -88,7 +93,7 @@ struct CanvasView: UIViewRepresentable {
 
                 let drawingID = self.model.drawingID
                 do {
-                    guard let ditto = DittoManager.shared?.ditto else { return }
+                    guard let ditto = self.ditto else { return }
 
                     try await ditto.store.transaction { transaction in
                         // Batch all inserts into a single MERGE operation
