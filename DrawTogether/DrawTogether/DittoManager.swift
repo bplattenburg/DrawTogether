@@ -8,15 +8,31 @@
 import DittoSwift
 
 final class DittoManager {
-    static let shared = try? DittoManager()
+    static let shared: DittoManager = {
+        do {
+            return try DittoManager()
+        } catch {
+            fatalError("DittoManager initialization failed: \(error)")
+        }
+    }()
 
-    public let ditto: Ditto?
+    public let ditto: Ditto
 
     private init() throws {
-        let cloudURL = URL(string: Env.DITTO_WEBSOCKET_URL)!
+        let cloudURL = URL(string: Env.DITTO_AUTH_URL)!
         let config = DittoConfig(databaseID: Env.DITTO_APP_ID, connect: .server(url: cloudURL))
         let ditto = try Ditto.openSync(config: config)
         try ditto.disableSyncWithV3()
+        ditto.auth?.expirationHandler = { ditto, secondsRemaining in
+            ditto.auth?.login(
+                token: Env.DITTO_PLAYGROUND_TOKEN,
+                provider: .development
+            ) { clientInfo, error in
+                if let error = error {
+                    NSLog("Ditto auth failed: %@", "\(error)")
+                }
+            }
+        }
         Task {
             try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
         }
