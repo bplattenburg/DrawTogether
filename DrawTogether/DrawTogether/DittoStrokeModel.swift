@@ -9,26 +9,39 @@ import Foundation
 import PencilKit
 
 /// Handles encoding, decoding, and key generation for individual PKStrokes.
-/// Each stroke is serialized by wrapping it in a single-stroke PKDrawing (since PKStroke is not Codable).
+/// Each stroke is serialized by wrapping it in a single-stroke PKDrawing and using
+/// `dataRepresentation()` (Apple's recommended persistence path), which preserves all stroke
+/// properties including masks set by the bitmap eraser.
+///
+/// Note: encoding is NOT deterministic across PKDrawing instances — re-wrapping the same stroke
+/// produces different bytes each time. Callers must store and reuse encoded values rather than
+/// re-encoding for comparison. Use `maskFingerprint(for:)` for change detection.
+///
 /// Keys are ISO8601 timestamps derived from `PKStrokePath.creationDate`, which PencilKit assigns
 /// uniquely when a stroke is drawn, giving deterministic and chronologically sortable keys.
 struct DittoStrokeModel {
 
-    /// Encodes a PKStroke as a JSON string (via single-stroke PKDrawing wrapper).
-    /// Note: JSON encoding via PKDrawing's Codable conformance may not preserve the `mask` property
-    /// set by the bitmap eraser. The official persistence path is `PKDrawing.dataRepresentation()`.
-    /// See: https://github.com/bplattenburg/DrawTogether/issues/8
+    /// Encodes a PKStroke as a base64 string via `PKDrawing.dataRepresentation()`.
+    /// Preserves all stroke properties including masks. NOT deterministic across calls —
+    /// store the result and reuse it rather than re-encoding for comparison.
     static func encode(_ stroke: PKStroke) -> String? {
         let wrapper = PKDrawing(strokes: [stroke])
-        guard let data = try? JSONEncoder().encode(wrapper) else { return nil }
-        return String(data: data, encoding: .utf8)
+        return wrapper.dataRepresentation().base64EncodedString()
     }
 
-    /// Decodes a PKStroke from a JSON string (via single-stroke PKDrawing wrapper)
-    static func decode(from json: String) -> PKStroke? {
-        guard let data = json.data(using: .utf8),
-              let wrapper = try? JSONDecoder().decode(PKDrawing.self, from: data) else { return nil }
-        return wrapper.strokes.first
+    /// Decodes a PKStroke from a base64-encoded `PKDrawing.dataRepresentation()` string.
+    static func decode(from encoded: String) -> PKStroke? {
+        guard let data = Data(base64Encoded: encoded),
+              let drawing = try? PKDrawing(data: data) else { return nil }
+        return drawing.strokes.first
+    }
+
+    /// Returns a deterministic fingerprint of a stroke's mask for change detection.
+    /// NSKeyedArchiver produces identical output for the same UIBezierPath, making this
+    /// safe for equality comparison. Returns nil if the stroke has no mask.
+    static func maskFingerprint(for stroke: PKStroke) -> Data? {
+        guard let mask = stroke.mask else { return nil }
+        return try? NSKeyedArchiver.archivedData(withRootObject: mask, requiringSecureCoding: true)
     }
 
     /// Generates a deterministic, sortable key from a stroke's creation date.

@@ -10,7 +10,7 @@ import PencilKit
 import DittoSwift
 
 /// Coordinates bidirectional sync between a PKCanvasView and Ditto.
-/// Observes local drawing changes, diffs strokes, and syncs to Ditto via transactions.
+/// Observes local drawing changes, builds the desired state, and syncs to Ditto via transactions.
 /// Observes remote Ditto changes and rebuilds the local drawing, preserving uncommitted local strokes.
 class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     var parent: CanvasView
@@ -34,6 +34,10 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
 
     /// Debounce interval for coalescing rapid drawing changes
     let syncDebounceNanoseconds: UInt64
+
+    /// Stored for rollback on transaction failure
+    private var pendingOldValues: [String: String?] = [:]
+    private var pendingNewMappings: [(date: Date, key: String)] = []
 
     init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000) {
         self.parent = parent
@@ -71,29 +75,39 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
             }
 
             // Capture current state on main
-            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto, knownCreationDateToKey: [Date: String])? in
+            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto, knownCreationDateToKey: [Date: String], knownStrokeMap: [String: String], knownMaskFingerprints: [String: Data])? in
                 guard let self, !self.isUpdatingFromDitto,
                       let strokes = self.canvasView?.drawing.strokes else { return nil }
-                return (strokes: strokes, drawingID: self.model.drawingID, ditto: self.ditto, knownCreationDateToKey: self.model.creationDateToKey)
+                return (strokes: strokes, drawingID: self.model.drawingID, ditto: self.ditto, knownCreationDateToKey: self.model.creationDateToKey, knownStrokeMap: self.model.strokeMap, knownMaskFingerprints: self.model.maskFingerprints)
             }) else { return }
 
-            // Diff off main — encoding can be CPU-intensive for many strokes
-            let (inserts, removes, newMappings) = DittoDrawingModel.computeDiff(
+            // Build desired state off main — encoding can be CPU-intensive for many strokes
+            let (desired, removes, newMappings) = DittoDrawingModel.buildDesiredState(
                 currentStrokes: syncContext.strokes,
-                knownCreationDateToKey: syncContext.knownCreationDateToKey
+                knownCreationDateToKey: syncContext.knownCreationDateToKey,
+                knownStrokeMap: syncContext.knownStrokeMap,
+                knownMaskFingerprints: syncContext.knownMaskFingerprints
             )
-            guard !inserts.isEmpty || !removes.isEmpty else { return }
+            guard !desired.isEmpty || !removes.isEmpty else { return }
 
-            // Persist key mappings on main to prevent duplicate inserts on repeated diffs
-            await MainActor.run { self?.model.persistPendingKeys(newMappings) }
+            // Persist pending state on main to prevent duplicate inserts on repeated diffs
+            await MainActor.run {
+                guard let self else { return }
+                self.pendingNewMappings = newMappings
+                self.pendingOldValues = self.model.persistPending(
+                    newMappings: newMappings,
+                    desired: desired,
+                    currentStrokes: syncContext.strokes
+                )
+            }
 
             // Run Ditto transaction off main
             do {
                 try await syncContext.ditto.store.transaction { transaction in
-                    if !inserts.isEmpty {
-                        let doc: [String: Any] = ["_id": syncContext.drawingID, "strokes": inserts]
+                    if !desired.isEmpty {
+                        let doc: [String: Any] = ["_id": syncContext.drawingID, "strokes": desired]
                         try await transaction.execute(
-                            query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
+                            query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO UPDATE_LOCAL_DIFF",
                             arguments: ["doc": doc]
                         )
                     }
@@ -108,11 +122,17 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
                     return .commit
                 }
 
-                // Apply on main after successful commit
-                await MainActor.run { self?.model.apply(inserts: inserts, removes: removes) }
+                // Apply removes on main after successful commit
+                await MainActor.run { self?.model.applyRemoves(removes) }
             } catch {
-                // Rollback optimistic key mappings so strokes can be re-synced on next diff
-                await MainActor.run { self?.model.rollbackPendingKeys(inserts: inserts) }
+                // Rollback optimistic state so changes can be re-synced on next diff
+                await MainActor.run {
+                    guard let self else { return }
+                    self.model.rollbackPending(
+                        oldValues: self.pendingOldValues,
+                        newMappings: self.pendingNewMappings
+                    )
+                }
                 NSLog("Error syncing strokes: %@", "\(error)")
             }
         }
