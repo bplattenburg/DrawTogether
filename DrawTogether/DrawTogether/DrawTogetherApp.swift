@@ -11,7 +11,7 @@ import SwiftUI
 struct DrawTogetherApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            DrawingPickerView()
         }
     }
 }

@@ -35,16 +35,17 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     /// Debounce interval for coalescing rapid drawing changes
     let syncDebounceNanoseconds: UInt64
 
-    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000) {
+    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000, drawingID: String = "1") {
         self.parent = parent
         self.ditto = ditto
+        self.model = DittoDrawingModel(drawingID: drawingID)
         self.syncDebounceNanoseconds = syncDebounceNanoseconds
         super.init()
         // Observer filtered by drawingID so .first always matches
         do {
             observer = try ditto.store.registerObserver(
                 query: "SELECT * FROM drawings WHERE _id = :drawingID",
-                arguments: ["drawingID": model.drawingID],
+                arguments: ["drawingID": drawingID],
                 handler: updateFromDitto(_:)
             )
         } catch {
@@ -160,5 +161,30 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
         isUpdatingFromDitto = true
         parent.drawing = PKDrawing(strokes: strokes)
         isUpdatingFromDitto = false
+    }
+
+    // MARK: - Drawing Switching
+
+    /// Tears down the current observer and sets up a new one for a different drawing.
+    /// Only the observer query changes — the global Ditto subscription remains as-is.
+    func switchDrawing(to drawingID: String) {
+        syncTask?.cancel()
+        observer?.cancel()
+
+        model = DittoDrawingModel(drawingID: drawingID)
+
+        isUpdatingFromDitto = true
+        parent.drawing = PKDrawing()
+        isUpdatingFromDitto = false
+
+        do {
+            observer = try ditto.store.registerObserver(
+                query: "SELECT * FROM drawings WHERE _id = :drawingID",
+                arguments: ["drawingID": drawingID],
+                handler: updateFromDitto(_:)
+            )
+        } catch {
+            NSLog("Failed to register observer for drawingID %@: %@", drawingID, "\(error)")
+        }
     }
 }

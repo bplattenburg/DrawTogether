@@ -11,6 +11,7 @@ import PencilKit
 struct CanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     @Binding var toolPicker: PKToolPicker?
+    let drawingID: String
 
     func makeUIView(context: Context) -> PKCanvasView {
         let canvasView = PKCanvasView()
@@ -22,6 +23,11 @@ struct CanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
+        // Switch drawing if the ID changed
+        if context.coordinator.model.drawingID != drawingID {
+            context.coordinator.switchDrawing(to: drawingID)
+        }
+
         if uiView.drawing != drawing {
             uiView.drawing = drawing
         }
@@ -32,6 +38,6 @@ struct CanvasView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> DrawingSyncCoordinator {
-        DrawingSyncCoordinator(self)
+        DrawingSyncCoordinator(self, drawingID: drawingID)
     }
 }

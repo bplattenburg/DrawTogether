@@ -26,8 +26,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
 
         // Create coordinator with injected test Ditto and no debounce delay
-        let parent = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil))
-        coordinator = DrawingSyncCoordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0)
+        let parent = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "1")
+        coordinator = DrawingSyncCoordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "1")
 
         canvasView = PKCanvasView()
         coordinator.canvasView = canvasView
@@ -184,5 +184,50 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         // 4. Verify model has one
         XCTAssertEqual(coordinator.model.drawing().strokes.count, 1)
+    }
+
+    // MARK: - Drawing Switching Tests
+
+    func testSwitchDrawingClearsCanvasAndReregistersObserver() async throws {
+        // Sync a stroke to drawing "1"
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
+        canvasView.drawing = PKDrawing(strokes: [stroke])
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
+
+        // Switch to a different drawing
+        coordinator.switchDrawing(to: "2")
+
+        XCTAssertEqual(coordinator.model.drawingID, "2", "Model should have new drawingID")
+        XCTAssertTrue(coordinator.model.strokeMap.isEmpty, "Model should be cleared")
+        XCTAssertTrue(coordinator.model.creationDateToKey.isEmpty, "Key maps should be cleared")
+    }
+
+    func testSwitchDrawingReceivesNewDrawingStrokes() async throws {
+        // Insert strokes for drawing "2" directly into Ditto
+        let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
+        guard let encoded = DittoStrokeModel.encode(stroke) else {
+            XCTFail("Failed to encode stroke")
+            return
+        }
+        let key = DittoStrokeModel.generateKey(for: Date(timeIntervalSince1970: 1000))
+        let doc: [String: Any] = ["_id": "2", "strokes": [key: encoded]]
+        try await ditto.store.execute(
+            query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
+            arguments: ["doc": doc]
+        )
+
+        // Switch to drawing "2" and wait for the observer to deliver strokes
+        let exp = expectation(description: "Model updated with drawing 2 strokes")
+        coordinator.onModelUpdate = { [weak self] in
+            if self?.coordinator.model.strokeMap.count == 1 {
+                exp.fulfill()
+                self?.coordinator.onModelUpdate = nil
+            }
+        }
+        coordinator.switchDrawing(to: "2")
+        await fulfillment(of: [exp], timeout: 5.0)
+
+        XCTAssertEqual(coordinator.model.drawingID, "2")
+        XCTAssertEqual(coordinator.model.strokeMap.count, 1)
     }
 }

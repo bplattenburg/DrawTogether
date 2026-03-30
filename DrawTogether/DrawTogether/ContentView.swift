@@ -9,17 +9,13 @@ import SwiftUI
 import PencilKit
 
 struct ContentView: View {
+    let drawingID: String
+
     @State private var drawing = PKDrawing()
     @State private var toolPicker: PKToolPicker? = PKToolPicker()
 
     var body: some View {
-        VStack {
-            CanvasView(drawing: $drawing, toolPicker: $toolPicker)
-                .edgesIgnoringSafeArea(.all) // Extend canvas to fill screen
-        }
+        CanvasView(drawing: $drawing, toolPicker: $toolPicker, drawingID: drawingID)
+            .edgesIgnoringSafeArea(.all)
     }
-}
-
-#Preview {
-    ContentView()
 }
