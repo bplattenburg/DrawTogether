@@ -26,7 +26,7 @@ final class DittoDrawingModelTests: XCTestCase {
         DittoStrokeModel.encode(stroke)
     }
 
-    /// Sets up a model with known strokes and returns the strokes for reuse in assertions.
+    /// Populates the given model with the provided strokes.
     private func modelWithKnownStrokes(_ model: inout DittoDrawingModel, strokes: [(stroke: PKStroke, key: String)]) {
         var map: [String: String] = [:]
         for (stroke, key) in strokes {

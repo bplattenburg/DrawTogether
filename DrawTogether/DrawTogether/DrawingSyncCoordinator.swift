@@ -35,10 +35,6 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     /// Debounce interval for coalescing rapid drawing changes
     let syncDebounceNanoseconds: UInt64
 
-    /// Stored for rollback on transaction failure
-    private var pendingOldValues: [String: String?] = [:]
-    private var pendingNewMappings: [(date: Date, key: String)] = []
-
     init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000) {
         self.parent = parent
         self.ditto = ditto
@@ -90,15 +86,16 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
             )
             guard !desired.isEmpty || !removes.isEmpty else { return }
 
-            // Persist pending state on main to prevent duplicate inserts on repeated diffs
-            await MainActor.run {
-                guard let self else { return }
-                self.pendingNewMappings = newMappings
-                self.pendingOldValues = self.model.persistPending(
+            // Persist pending state on main to prevent duplicate inserts on repeated diffs.
+            // Capture rollback data as task-locals so concurrent task replacement can't corrupt them.
+            let (oldValues, pendingMappings) = await MainActor.run { () -> ([String: String?], [(date: Date, key: String)]) in
+                guard let self else { return ([:], []) }
+                let old = self.model.persistPending(
                     newMappings: newMappings,
                     desired: desired,
                     currentStrokes: syncContext.strokes
                 )
+                return (old, newMappings)
             }
 
             // Run Ditto transaction off main
@@ -127,10 +124,9 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
             } catch {
                 // Rollback optimistic state so changes can be re-synced on next diff
                 await MainActor.run {
-                    guard let self else { return }
-                    self.model.rollbackPending(
-                        oldValues: self.pendingOldValues,
-                        newMappings: self.pendingNewMappings
+                    self?.model.rollbackPending(
+                        oldValues: oldValues,
+                        newMappings: pendingMappings
                     )
                 }
                 NSLog("Error syncing strokes: %@", "\(error)")
