@@ -13,7 +13,7 @@ import PencilKit
 struct DittoDrawingModel {
     let drawingID: String
 
-    /// Maps Ditto key (ISO8601 timestamp string) to encoded single-stroke PKDrawing
+    /// Maps Ditto key (ISO8601 timestamp string) to encoded PKDrawing (may contain multiple strokes)
     private(set) var strokeMap: [String: String] = [:]
 
     /// Maps stroke creation date to Ditto key, for key reuse and remove detection
@@ -22,10 +22,10 @@ struct DittoDrawingModel {
     /// Reverse map: Ditto key to creation date, for O(1) removal lookups
     private(set) var keyToCreationDate: [String: Date] = [:]
 
-    /// Mask fingerprints for known strokes, used to detect bitmap eraser modifications.
-    /// Key is the Ditto key; value is NSKeyedArchiver data of the UIBezierPath mask.
-    /// Absent entry means the stroke has no mask.
-    private(set) var maskFingerprints: [String: Data] = [:]
+    /// Group fingerprints for known stroke groups, used to detect bitmap eraser modifications
+    /// (mask changes and stroke splits). Key is the Ditto key; value is a composite fingerprint
+    /// encoding stroke count and each stroke's mask data.
+    private(set) var groupFingerprints: [String: Data] = [:]
 
     init(drawingID: String = "1") {
         self.drawingID = drawingID
@@ -33,19 +33,20 @@ struct DittoDrawingModel {
 
     // MARK: - Drawing Reconstruction
 
-    /// Rebuilds a PKDrawing from strokeMap by sorting keys lexicographically (chronological z-order)
+    /// Rebuilds a PKDrawing from strokeMap by sorting keys lexicographically (chronological z-order).
+    /// Each key may contain multiple strokes (split pieces), which are flattened in order.
     func drawing() -> PKDrawing {
         let sortedKeys = strokeMap.keys.sorted()
-        let strokes: [PKStroke] = sortedKeys.compactMap { key in
+        let strokes: [PKStroke] = sortedKeys.flatMap { key -> [PKStroke] in
             guard let encoded = strokeMap[key] else {
                 NSLog("DittoDrawingModel.drawing(): Missing data for stroke key: %@", key)
-                return nil
+                return []
             }
-            guard let stroke = DittoStrokeModel.decode(from: encoded) else {
-                NSLog("DittoDrawingModel.drawing(): Failed to decode stroke for key: %@", key)
-                return nil
+            let decoded = DittoStrokeModel.decodeGroup(from: encoded)
+            if decoded.isEmpty {
+                NSLog("DittoDrawingModel.drawing(): Failed to decode stroke(s) for key: %@", key)
             }
-            return stroke
+            return decoded
         }
         return PKDrawing(strokes: strokes)
     }
@@ -57,14 +58,13 @@ struct DittoDrawingModel {
         strokeMap = map
         creationDateToKey = [:]
         keyToCreationDate = [:]
-        maskFingerprints = [:]
+        groupFingerprints = [:]
         for (key, encoded) in map {
-            if let stroke = DittoStrokeModel.decode(from: encoded) {
-                creationDateToKey[stroke.path.creationDate] = key
-                keyToCreationDate[key] = stroke.path.creationDate
-                if let fp = DittoStrokeModel.maskFingerprint(for: stroke) {
-                    maskFingerprints[key] = fp
-                }
+            let strokes = DittoStrokeModel.decodeGroup(from: encoded)
+            if let first = strokes.first {
+                creationDateToKey[first.path.creationDate] = key
+                keyToCreationDate[key] = first.path.creationDate
+                groupFingerprints[key] = DittoStrokeModel.groupFingerprint(for: strokes)
             }
         }
     }
@@ -73,10 +73,15 @@ struct DittoDrawingModel {
 
     /// Builds the full desired strokes map from current canvas strokes.
     ///
-    /// For known strokes whose mask hasn't changed, reuses the stored encoding from `knownStrokeMap`
+    /// Groups strokes by `creationDate` to handle bitmap eraser splits and the rare case of
+    /// unrelated strokes sharing a timestamp. All strokes in a group are encoded together as a
+    /// multi-stroke PKDrawing under one Ditto key, so no data is lost on collision.
+    ///
+    /// For known groups whose fingerprint hasn't changed, reuses the stored encoding
     /// (PKDrawing encoding is non-deterministic across instances, so re-encoding would produce
     /// different bytes and cause unnecessary Ditto replication or concurrent write conflicts).
-    /// For new strokes or strokes with mask changes, encodes fresh.
+    /// For new groups or groups with fingerprint changes (mask change, split, or piece
+    /// deletion), encodes fresh.
     ///
     /// Also detects removes: known keys not present on the canvas.
     ///
@@ -85,30 +90,43 @@ struct DittoDrawingModel {
         currentStrokes: [PKStroke],
         knownCreationDateToKey: [Date: String],
         knownStrokeMap: [String: String],
-        knownMaskFingerprints: [String: Data]
+        knownGroupFingerprints: [String: Data]
     ) -> (desired: [String: String], removes: [String], newMappings: [(date: Date, key: String)]) {
         var desired: [String: String] = [:]
         var newMappings: [(date: Date, key: String)] = []
 
+        // Group strokes by creationDate, preserving z-order within each group
+        var strokesByDate: [(date: Date, strokes: [PKStroke])] = []
+        var dateIndex: [Date: Int] = [:]
         for stroke in currentStrokes {
-            if let existingKey = knownCreationDateToKey[stroke.path.creationDate] {
-                // Known stroke — check if mask changed via deterministic fingerprint
-                let currentFP = DittoStrokeModel.maskFingerprint(for: stroke)
-                let storedFP = knownMaskFingerprints[existingKey]
+            let date = stroke.path.creationDate
+            if let idx = dateIndex[date] {
+                strokesByDate[idx].strokes.append(stroke)
+            } else {
+                dateIndex[date] = strokesByDate.count
+                strokesByDate.append((date: date, strokes: [stroke]))
+            }
+        }
+
+        for (date, group) in strokesByDate {
+            if let existingKey = knownCreationDateToKey[date] {
+                // Known group — check if fingerprint changed (mask change or split)
+                let currentFP = DittoStrokeModel.groupFingerprint(for: group)
+                let storedFP = knownGroupFingerprints[existingKey]
                 if currentFP == storedFP, let storedEncoding = knownStrokeMap[existingKey] {
-                    // Mask unchanged — reuse stored encoding to avoid non-deterministic re-encoding
+                    // Group unchanged — reuse stored encoding
                     desired[existingKey] = storedEncoding
                 } else {
-                    // Mask changed — re-encode
-                    guard let encoded = DittoStrokeModel.encode(stroke) else { continue }
+                    // Group changed (mask change, split, or piece deletion) — re-encode
+                    guard let encoded = DittoStrokeModel.encodeGroup(group) else { continue }
                     desired[existingKey] = encoded
                 }
             } else {
-                // New stroke
-                guard let encoded = DittoStrokeModel.encode(stroke) else { continue }
-                let key = DittoStrokeModel.generateKey(for: stroke.path.creationDate)
+                // New stroke group
+                guard let encoded = DittoStrokeModel.encodeGroup(group) else { continue }
+                let key = DittoStrokeModel.generateKey(for: date)
                 desired[key] = encoded
-                newMappings.append((date: stroke.path.creationDate, key: key))
+                newMappings.append((date: date, key: key))
             }
         }
 
@@ -143,14 +161,14 @@ struct DittoDrawingModel {
             strokeMap[key] = encoded
         }
 
-        // Update mask fingerprints from current strokes
+        // Update group fingerprints from current strokes grouped by date
+        var strokesByDate: [Date: [PKStroke]] = [:]
         for stroke in currentStrokes {
-            if let key = creationDateToKey[stroke.path.creationDate] {
-                if let fp = DittoStrokeModel.maskFingerprint(for: stroke) {
-                    maskFingerprints[key] = fp
-                } else {
-                    maskFingerprints.removeValue(forKey: key)
-                }
+            strokesByDate[stroke.path.creationDate, default: []].append(stroke)
+        }
+        for (date, group) in strokesByDate {
+            if let key = creationDateToKey[date] {
+                groupFingerprints[key] = DittoStrokeModel.groupFingerprint(for: group)
             }
         }
 
@@ -168,20 +186,19 @@ struct DittoDrawingModel {
             keyToCreationDate.removeValue(forKey: mapping.key)
         }
 
-        // Restore old strokeMap values and recalculate fingerprints
+        // Restore old strokeMap values and recalculate group fingerprints
         for (key, oldValue) in oldValues {
             if let old = oldValue {
                 strokeMap[key] = old
-                if let stroke = DittoStrokeModel.decode(from: old) {
-                    if let fp = DittoStrokeModel.maskFingerprint(for: stroke) {
-                        maskFingerprints[key] = fp
-                    } else {
-                        maskFingerprints.removeValue(forKey: key)
-                    }
+                let strokes = DittoStrokeModel.decodeGroup(from: old)
+                if !strokes.isEmpty {
+                    groupFingerprints[key] = DittoStrokeModel.groupFingerprint(for: strokes)
+                } else {
+                    groupFingerprints.removeValue(forKey: key)
                 }
             } else {
                 strokeMap.removeValue(forKey: key)
-                maskFingerprints.removeValue(forKey: key)
+                groupFingerprints.removeValue(forKey: key)
             }
         }
     }
@@ -196,7 +213,7 @@ struct DittoDrawingModel {
                 keyToCreationDate.removeValue(forKey: key)
             }
             strokeMap.removeValue(forKey: key)
-            maskFingerprints.removeValue(forKey: key)
+            groupFingerprints.removeValue(forKey: key)
         }
     }
 }

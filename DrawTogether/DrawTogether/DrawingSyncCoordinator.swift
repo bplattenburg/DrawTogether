@@ -71,10 +71,10 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
             }
 
             // Capture current state on main
-            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto, knownCreationDateToKey: [Date: String], knownStrokeMap: [String: String], knownMaskFingerprints: [String: Data])? in
+            guard let syncContext = await MainActor.run(body: { () -> (strokes: [PKStroke], drawingID: String, ditto: Ditto, knownCreationDateToKey: [Date: String], knownStrokeMap: [String: String], knownGroupFingerprints: [String: Data])? in
                 guard let self, !self.isUpdatingFromDitto,
                       let strokes = self.canvasView?.drawing.strokes else { return nil }
-                return (strokes: strokes, drawingID: self.model.drawingID, ditto: self.ditto, knownCreationDateToKey: self.model.creationDateToKey, knownStrokeMap: self.model.strokeMap, knownMaskFingerprints: self.model.maskFingerprints)
+                return (strokes: strokes, drawingID: self.model.drawingID, ditto: self.ditto, knownCreationDateToKey: self.model.creationDateToKey, knownStrokeMap: self.model.strokeMap, knownGroupFingerprints: self.model.groupFingerprints)
             }) else { return }
 
             // Build desired state off main — encoding can be CPU-intensive for many strokes
@@ -82,7 +82,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
                 currentStrokes: syncContext.strokes,
                 knownCreationDateToKey: syncContext.knownCreationDateToKey,
                 knownStrokeMap: syncContext.knownStrokeMap,
-                knownMaskFingerprints: syncContext.knownMaskFingerprints
+                knownGroupFingerprints: syncContext.knownGroupFingerprints
             )
             guard !desired.isEmpty || !removes.isEmpty else { return }
 

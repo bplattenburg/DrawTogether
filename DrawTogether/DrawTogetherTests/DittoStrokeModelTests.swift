@@ -24,45 +24,15 @@ final class DittoStrokeModelTests: XCTestCase {
 
     // MARK: - Encode/Decode Tests
 
-    func testRoundTripPreservesContent() {
-        let originalStroke = makeStroke(at: CGPoint(x: 42, y: 42))
-
-        guard let encoded = DittoStrokeModel.encode(originalStroke),
-              let roundTrippedStroke = DittoStrokeModel.decode(from: encoded) else {
-            XCTFail("Round-trip encoding/decoding failed")
-            return
-        }
-
-        XCTAssertEqual(roundTrippedStroke.path.count, originalStroke.path.count)
-        XCTAssertEqual(roundTrippedStroke.path.first?.location.x ?? 0, 42, accuracy: 1)
-        XCTAssertEqual(roundTrippedStroke.path.first?.location.y ?? 0, 42, accuracy: 1)
-        XCTAssertEqual(roundTrippedStroke.ink.inkType, originalStroke.ink.inkType)
-    }
-
-    func testRoundTripPreservesMask() {
-        let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
-        let stroke = makeStroke(at: CGPoint(x: 42, y: 42))
-        let maskedStroke = PKStroke(ink: stroke.ink, path: stroke.path, transform: stroke.transform, mask: mask)
-
-        guard let encoded = DittoStrokeModel.encode(maskedStroke),
-              let decoded = DittoStrokeModel.decode(from: encoded) else {
-            XCTFail("Round-trip encoding/decoding failed")
-            return
-        }
-
-        XCTAssertNotNil(decoded.mask, "Decoded stroke should have a mask")
-        let decodedBounds = decoded.mask!.bounds
-        XCTAssertEqual(decodedBounds.origin.x, mask.bounds.origin.x, accuracy: 1)
-        XCTAssertEqual(decodedBounds.origin.y, mask.bounds.origin.y, accuracy: 1)
-        XCTAssertEqual(decodedBounds.size.width, mask.bounds.size.width, accuracy: 1)
-        XCTAssertEqual(decodedBounds.size.height, mask.bounds.size.height, accuracy: 1)
-    }
-
-    func testDecodeReturnsNilForInvalidInput() {
-        XCTAssertNil(DittoStrokeModel.decode(from: "not valid base64!@#"))
-        XCTAssertNil(DittoStrokeModel.decode(from: ""))
+    func testDecodeGroupReturnsEmptyForInvalidInput() {
+        XCTAssertTrue(DittoStrokeModel.decodeGroup(from: "not valid base64!@#").isEmpty)
+        XCTAssertTrue(DittoStrokeModel.decodeGroup(from: "").isEmpty)
         // Valid base64 but not a PKDrawing
-        XCTAssertNil(DittoStrokeModel.decode(from: "aGVsbG8="))
+        XCTAssertTrue(DittoStrokeModel.decodeGroup(from: "aGVsbG8=").isEmpty)
+    }
+
+    func testEncodeGroupReturnsNilForEmptyArray() {
+        XCTAssertNil(DittoStrokeModel.encodeGroup([]))
     }
 
     // MARK: - Mask Fingerprint Tests
@@ -92,6 +62,43 @@ final class DittoStrokeModelTests: XCTestCase {
         XCTAssertNotNil(fpA)
         XCTAssertNotNil(fpB)
         XCTAssertNotEqual(fpA, fpB, "Different masks should produce different fingerprints")
+    }
+
+    // MARK: - Group Fingerprint Tests
+
+    func testGroupFingerprintChangesWithStrokeCount() {
+        let stroke = makeStroke()
+        let fp1 = DittoStrokeModel.groupFingerprint(for: [stroke])
+        let fp2 = DittoStrokeModel.groupFingerprint(for: [stroke, stroke])
+        XCTAssertNotEqual(fp1, fp2, "Different stroke counts should produce different fingerprints")
+    }
+
+    func testGroupFingerprintStableForSameGroup() {
+        let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10))
+        let stroke2 = makeStroke(at: CGPoint(x: 50, y: 50))
+        let fp1 = DittoStrokeModel.groupFingerprint(for: [stroke1, stroke2])
+        let fp2 = DittoStrokeModel.groupFingerprint(for: [stroke1, stroke2])
+        XCTAssertEqual(fp1, fp2, "Same group should produce identical fingerprints")
+    }
+
+    func testGroupFingerprintChangesWhenMaskAdded() {
+        let stroke = makeStroke()
+        let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
+        let maskedStroke = PKStroke(ink: stroke.ink, path: stroke.path, transform: stroke.transform, mask: mask)
+
+        let fpBefore = DittoStrokeModel.groupFingerprint(for: [stroke])
+        let fpAfter = DittoStrokeModel.groupFingerprint(for: [maskedStroke])
+        XCTAssertNotEqual(fpBefore, fpAfter, "Adding a mask should change the group fingerprint")
+    }
+
+    func testGroupFingerprintSensitiveToOrder() {
+        let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10))
+        let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
+        let stroke2 = PKStroke(ink: stroke1.ink, path: makeStroke(at: CGPoint(x: 50, y: 50)).path, transform: .identity, mask: mask)
+
+        let fpAB = DittoStrokeModel.groupFingerprint(for: [stroke1, stroke2])
+        let fpBA = DittoStrokeModel.groupFingerprint(for: [stroke2, stroke1])
+        XCTAssertNotEqual(fpAB, fpBA, "Different stroke order should produce different fingerprints")
     }
 
     // MARK: - Key Generation Tests

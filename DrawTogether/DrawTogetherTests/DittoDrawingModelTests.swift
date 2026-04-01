@@ -76,7 +76,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke1, stroke2],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertEqual(result.desired.count, 2)
@@ -96,7 +96,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertEqual(result.desired.count, 1)
@@ -117,7 +117,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertEqual(result.desired[key], storedEncoding,
@@ -141,7 +141,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [maskedStroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertEqual(result.desired.count, 1)
@@ -169,7 +169,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [maskedStrokeB],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertNotEqual(result.desired[key], storedEncoding, "Changed mask should trigger re-encoding")
@@ -191,7 +191,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertNotEqual(result.desired[key], storedEncoding, "Mask removal should trigger re-encoding")
@@ -211,7 +211,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [strokeA],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertEqual(result.desired.count, 1)
@@ -236,7 +236,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [maskedA, strokeC],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertEqual(result.desired.count, 2, "A (modified) + C (new)")
@@ -256,7 +256,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
 
         XCTAssertTrue(result.desired.isEmpty)
@@ -273,7 +273,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
         XCTAssertEqual(result1.newMappings.count, 1)
 
@@ -283,7 +283,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
         XCTAssertTrue(result2.newMappings.isEmpty, "Second call should produce no new mappings")
     }
@@ -296,7 +296,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
         let oldValues = model.persistPending(newMappings: result1.newMappings, desired: result1.desired, currentStrokes: [stroke])
 
@@ -306,7 +306,7 @@ final class DittoDrawingModelTests: XCTestCase {
             currentStrokes: [stroke],
             knownCreationDateToKey: model.creationDateToKey,
             knownStrokeMap: model.strokeMap,
-            knownMaskFingerprints: model.maskFingerprints
+            knownGroupFingerprints: model.groupFingerprints
         )
         XCTAssertEqual(result2.newMappings.count, 1, "Stroke should be re-detected after rollback")
     }
@@ -322,14 +322,14 @@ final class DittoDrawingModelTests: XCTestCase {
         let key = "2026-03-25T12:00:00.000Z"
 
         modelWithKnownStrokes(&model, strokes: [(maskedStroke, key)])
-        XCTAssertNotNil(model.maskFingerprints[key])
+        XCTAssertNotNil(model.groupFingerprints[key])
 
         model.applyRemoves([key])
 
         XCTAssertNil(model.strokeMap[key])
         XCTAssertNil(model.creationDateToKey[date])
         XCTAssertNil(model.keyToCreationDate[key])
-        XCTAssertNil(model.maskFingerprints[key])
+        XCTAssertNil(model.groupFingerprints[key])
     }
 
     func testApplyRemovesLeavesOtherStrokesIntact() {
@@ -350,26 +350,43 @@ final class DittoDrawingModelTests: XCTestCase {
 
     // MARK: - Update From Strokes Map Tests
 
-    func testUpdateFromStrokesMapPopulatesFingerprints() {
+    func testUpdateFromStrokesMapPopulatesGroupFingerprints() {
         var model = DittoDrawingModel()
-        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
+        let date = Date(timeIntervalSince1970: 1000)
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
         let maskedStroke = PKStroke(ink: stroke.ink, path: stroke.path, transform: stroke.transform, mask: mask)
-        let key = "2026-03-25T12:00:00.000Z"
+        let unmaskedKey = "2026-03-25T12:00:00.000Z"
+        let maskedKey = "2026-03-25T12:00:01.000Z"
 
-        modelWithKnownStrokes(&model, strokes: [(maskedStroke, key)])
+        modelWithKnownStrokes(&model, strokes: [(stroke, unmaskedKey), (maskedStroke, maskedKey)])
 
-        XCTAssertNotNil(model.maskFingerprints[key], "Masked stroke should have a fingerprint")
+        // Both should have fingerprints (groupFingerprint captures count even without masks)
+        XCTAssertNotNil(model.groupFingerprints[unmaskedKey])
+        XCTAssertNotNil(model.groupFingerprints[maskedKey])
+        // But they should differ (one has a mask, the other doesn't)
+        XCTAssertNotEqual(model.groupFingerprints[unmaskedKey], model.groupFingerprints[maskedKey])
     }
 
-    func testUpdateFromStrokesMapNoFingerprintForUnmaskedStroke() {
+    func testUpdateFromStrokesMapHandlesMultiStrokeGroup() {
         var model = DittoDrawingModel()
-        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
+        let date = Date(timeIntervalSince1970: 1000)
+        let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
         let key = "2026-03-25T12:00:00.000Z"
 
-        modelWithKnownStrokes(&model, strokes: [(stroke, key)])
+        guard let encoded = DittoStrokeModel.encodeGroup([piece1, piece2]) else {
+            XCTFail("Group encoding failed")
+            return
+        }
+        model.updateFromStrokesMap([key: encoded])
 
-        XCTAssertNil(model.maskFingerprints[key], "Unmasked stroke should have no fingerprint")
+        XCTAssertEqual(model.creationDateToKey[date], key, "Multi-stroke group should map to one key")
+        XCTAssertEqual(model.keyToCreationDate[key], date)
+        XCTAssertNotNil(model.groupFingerprints[key])
+        // Fingerprint should reflect 2 strokes, not 1
+        let singleFP = DittoStrokeModel.groupFingerprint(for: [piece1])
+        XCTAssertNotEqual(model.groupFingerprints[key], singleFP, "Group fingerprint should reflect both pieces")
     }
 
     func testUpdateFromStrokesMapClearsStateOnEmptyMap() {
@@ -383,6 +400,163 @@ final class DittoDrawingModelTests: XCTestCase {
         XCTAssertTrue(model.strokeMap.isEmpty)
         XCTAssertTrue(model.creationDateToKey.isEmpty)
         XCTAssertTrue(model.keyToCreationDate.isEmpty)
-        XCTAssertTrue(model.maskFingerprints.isEmpty)
+        XCTAssertTrue(model.groupFingerprints.isEmpty)
+    }
+
+    // MARK: - Stroke Split Tests
+
+    func testBuildDesiredStateGroupsSplitStrokes() {
+        var model = DittoDrawingModel()
+        let date = Date(timeIntervalSince1970: 1000)
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let key = "2026-03-25T12:00:00.000Z"
+
+        modelWithKnownStrokes(&model, strokes: [(stroke, key)])
+
+        // Simulate split: two strokes with same creationDate
+        let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
+
+        let result = DittoDrawingModel.buildDesiredState(
+            currentStrokes: [piece1, piece2],
+            knownCreationDateToKey: model.creationDateToKey,
+            knownStrokeMap: model.strokeMap,
+            knownGroupFingerprints: model.groupFingerprints
+        )
+
+        XCTAssertEqual(result.desired.count, 1, "Split pieces should be grouped under one key")
+        XCTAssertNotNil(result.desired[key], "Should reuse existing key")
+        XCTAssertTrue(result.removes.isEmpty, "No removes — key is still in use")
+        XCTAssertTrue(result.newMappings.isEmpty, "Same key reused, no new mappings")
+
+        // Verify the encoded value contains both strokes
+        let decoded = DittoStrokeModel.decodeGroup(from: result.desired[key]!)
+        XCTAssertEqual(decoded.count, 2, "Encoded value should contain both split pieces")
+    }
+
+    func testBuildDesiredStateReencodesOnSplit() {
+        var model = DittoDrawingModel()
+        let date = Date(timeIntervalSince1970: 1000)
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let key = "2026-03-25T12:00:00.000Z"
+
+        modelWithKnownStrokes(&model, strokes: [(stroke, key)])
+        let storedEncoding = model.strokeMap[key]!
+
+        // Split into two pieces
+        let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
+
+        let result = DittoDrawingModel.buildDesiredState(
+            currentStrokes: [piece1, piece2],
+            knownCreationDateToKey: model.creationDateToKey,
+            knownStrokeMap: model.strokeMap,
+            knownGroupFingerprints: model.groupFingerprints
+        )
+
+        XCTAssertNotEqual(result.desired[key], storedEncoding, "Split should trigger re-encoding")
+    }
+
+    func testBuildDesiredStateHandlesDeleteOfOneSplitPiece() {
+        var model = DittoDrawingModel()
+        let date = Date(timeIntervalSince1970: 1000)
+        let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
+        let key = "2026-03-25T12:00:00.000Z"
+
+        // Populate model with a two-stroke group
+        guard let groupEncoded = DittoStrokeModel.encodeGroup([piece1, piece2]) else {
+            XCTFail("Group encoding failed")
+            return
+        }
+        model.updateFromStrokesMap([key: groupEncoded])
+
+        // User deletes one piece — canvas has only piece1
+        let result = DittoDrawingModel.buildDesiredState(
+            currentStrokes: [piece1],
+            knownCreationDateToKey: model.creationDateToKey,
+            knownStrokeMap: model.strokeMap,
+            knownGroupFingerprints: model.groupFingerprints
+        )
+
+        XCTAssertEqual(result.desired.count, 1)
+        XCTAssertNotNil(result.desired[key], "Should reuse existing key")
+        XCTAssertTrue(result.removes.isEmpty, "Key still in use — not a remove")
+
+        // Verify re-encoded as single stroke
+        let decoded = DittoStrokeModel.decodeGroup(from: result.desired[key]!)
+        XCTAssertEqual(decoded.count, 1, "Should encode only the remaining piece")
+    }
+
+    func testBuildDesiredStateHandlesDeleteOfAllSplitPieces() {
+        var model = DittoDrawingModel()
+        let date = Date(timeIntervalSince1970: 1000)
+        let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
+        let key = "2026-03-25T12:00:00.000Z"
+
+        guard let groupEncoded = DittoStrokeModel.encodeGroup([piece1, piece2]) else {
+            XCTFail("Group encoding failed")
+            return
+        }
+        model.updateFromStrokesMap([key: groupEncoded])
+
+        // All pieces deleted
+        let result = DittoDrawingModel.buildDesiredState(
+            currentStrokes: [],
+            knownCreationDateToKey: model.creationDateToKey,
+            knownStrokeMap: model.strokeMap,
+            knownGroupFingerprints: model.groupFingerprints
+        )
+
+        XCTAssertTrue(result.desired.isEmpty)
+        XCTAssertEqual(result.removes, [key])
+    }
+
+    func testDrawingReconstructsFlattenedSplitStrokes() {
+        var model = DittoDrawingModel()
+        let date = Date(timeIntervalSince1970: 1000)
+        let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
+        let key = "2026-03-25T12:00:00.000Z"
+
+        guard let groupEncoded = DittoStrokeModel.encodeGroup([piece1, piece2]) else {
+            XCTFail("Group encoding failed")
+            return
+        }
+        model.updateFromStrokesMap([key: groupEncoded])
+
+        let drawing = model.drawing()
+        XCTAssertEqual(drawing.strokes.count, 2, "drawing() should flatten multi-stroke groups")
+        XCTAssertEqual(drawing.strokes[0].path.first?.location.x ?? 0, 10, accuracy: 1)
+        XCTAssertEqual(drawing.strokes[1].path.first?.location.x ?? 0, 50, accuracy: 1)
+    }
+
+    // MARK: - Timestamp Collision Tests
+
+    func testBuildDesiredStateGroupsUnrelatedStrokesWithSameTimestamp() {
+        let model = DittoDrawingModel()
+        let date = Date(timeIntervalSince1970: 1000)
+
+        // Two unrelated strokes that happen to share a creationDate
+        let strokeA = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        let strokeB = makeStroke(at: CGPoint(x: 90, y: 90), creationDate: date)
+
+        let result = DittoDrawingModel.buildDesiredState(
+            currentStrokes: [strokeA, strokeB],
+            knownCreationDateToKey: model.creationDateToKey,
+            knownStrokeMap: model.strokeMap,
+            knownGroupFingerprints: model.groupFingerprints
+        )
+
+        XCTAssertEqual(result.desired.count, 1, "Both strokes should be grouped under one key")
+        XCTAssertEqual(result.newMappings.count, 1, "One new key for the shared date")
+
+        // Verify both strokes are preserved in the encoded value
+        let key = result.newMappings[0].key
+        let decoded = DittoStrokeModel.decodeGroup(from: result.desired[key]!)
+        XCTAssertEqual(decoded.count, 2, "Both strokes should survive the round-trip")
+        XCTAssertEqual(decoded[0].path.first?.location.x ?? 0, 10, accuracy: 1)
+        XCTAssertEqual(decoded[1].path.first?.location.x ?? 0, 90, accuracy: 1)
     }
 }

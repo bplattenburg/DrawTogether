@@ -149,7 +149,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.model.strokeMap.count, 1)
 
-        // Simulate a remote insert directly into Ditto
+        // Simulate a remote peer inserting a stroke by writing directly to Ditto
+        // (bypasses the coordinator to mimic data arriving from another device)
         let remoteStroke = makeStroke(at: CGPoint(x: 200, y: 200), creationDate: Date(timeIntervalSince1970: 5000))
         guard let remoteJSON = DittoStrokeModel.encode(remoteStroke) else {
             XCTFail("Failed to encode remote stroke")
@@ -186,11 +187,12 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
             guard let self else { return }
             // Check that the stored stroke now has a mask
             if let key = self.coordinator.model.creationDateToKey[date],
-               let encoded = self.coordinator.model.strokeMap[key],
-               let decoded = DittoStrokeModel.decode(from: encoded),
-               decoded.mask != nil {
-                exp.fulfill()
-                self.coordinator.onModelUpdate = nil
+               let encoded = self.coordinator.model.strokeMap[key] {
+                let decoded = DittoStrokeModel.decodeGroup(from: encoded)
+                if decoded.first?.mask != nil {
+                    exp.fulfill()
+                    self.coordinator.onModelUpdate = nil
+                }
             }
         }
         coordinator.canvasViewDrawingDidChange(canvasView)
@@ -204,7 +206,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         canvasView.drawing = PKDrawing(strokes: [stroke])
         try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
 
-        // Directly write a masked version into Ditto (simulating remote peer)
+        // Simulate a remote peer applying a bitmap eraser by writing a masked stroke
+        // directly to Ditto (bypasses the coordinator to mimic data arriving from another device)
         let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
         let maskedStroke = PKStroke(ink: stroke.ink, path: stroke.path, transform: stroke.transform, mask: mask)
         guard let maskedEncoded = DittoStrokeModel.encode(maskedStroke) else {
@@ -222,17 +225,18 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         let exp = expectation(description: "Model updated with remote masked stroke")
         coordinator.onModelUpdate = { [weak self] in
             guard let self else { return }
-            if let encoded = self.coordinator.model.strokeMap[key],
-               let decoded = DittoStrokeModel.decode(from: encoded),
-               decoded.mask != nil {
-                exp.fulfill()
-                self.coordinator.onModelUpdate = nil
+            if let encoded = self.coordinator.model.strokeMap[key] {
+                let decoded = DittoStrokeModel.decodeGroup(from: encoded)
+                if decoded.first?.mask != nil {
+                    exp.fulfill()
+                    self.coordinator.onModelUpdate = nil
+                }
             }
         }
         await fulfillment(of: [exp], timeout: 5.0)
 
         // Verify fingerprint was populated
-        XCTAssertNotNil(coordinator.model.maskFingerprints[key])
+        XCTAssertNotNil(coordinator.model.groupFingerprints[key])
     }
 
     func testMixedInsertUpdateAndRemove() async throws {
@@ -273,11 +277,12 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         // Verify A has a mask
         let dittoMap = try await queryStrokesMap()
-        if let encodedA = dittoMap[keyA] as? String,
-           let decodedA = DittoStrokeModel.decode(from: encodedA) {
-            XCTAssertNotNil(decodedA.mask, "Stroke A should have a mask after modification")
+        if let encodedA = dittoMap[keyA] as? String {
+            let decodedA = DittoStrokeModel.decodeGroup(from: encodedA)
+            XCTAssertFalse(decodedA.isEmpty, "Stroke A should decode successfully")
+            XCTAssertNotNil(decodedA.first?.mask, "Stroke A should have a mask after modification")
         } else {
-            XCTFail("Stroke A not found or failed to decode")
+            XCTFail("Stroke A not found in Ditto")
         }
     }
 
@@ -300,4 +305,5 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         // 4. Verify model has one
         XCTAssertEqual(coordinator.model.drawing().strokes.count, 1)
     }
+
 }
