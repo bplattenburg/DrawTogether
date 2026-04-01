@@ -9,38 +9,44 @@ import Foundation
 import PencilKit
 
 /// Manages the sync state for a single drawing document in Ditto.
-/// Tracks which strokes are known (synced) and provides diffing to detect local changes.
+/// Tracks which strokes are known (synced) and builds the desired state for outbound sync.
 struct DittoDrawingModel {
     let drawingID: String
 
-    /// Maps Ditto key (ISO8601 timestamp string) to JSON-encoded single-stroke PKDrawing
+    /// Maps Ditto key (ISO8601 timestamp string) to encoded PKDrawing (may contain multiple strokes)
     private(set) var strokeMap: [String: String] = [:]
 
-    /// Maps stroke creation date to Ditto key, for stable diffing
+    /// Maps stroke creation date to Ditto key, for key reuse and remove detection
     private(set) var creationDateToKey: [Date: String] = [:]
 
     /// Reverse map: Ditto key to creation date, for O(1) removal lookups
     private(set) var keyToCreationDate: [String: Date] = [:]
 
-    init(drawingID: String = "1") {
+    /// Group fingerprints for known stroke groups, used to detect bitmap eraser modifications
+    /// (mask changes and stroke splits). Key is the Ditto key; value is a composite fingerprint
+    /// encoding stroke count and each stroke's mask data.
+    private(set) var groupFingerprints: [String: Data] = [:]
+
+    init(drawingID: String = "2") {
         self.drawingID = drawingID
     }
 
     // MARK: - Drawing Reconstruction
 
-    /// Rebuilds a PKDrawing from strokeMap by sorting keys lexicographically (chronological z-order)
+    /// Rebuilds a PKDrawing from strokeMap by sorting keys lexicographically (chronological z-order).
+    /// Each key may contain multiple strokes (split pieces), which are flattened in order.
     func drawing() -> PKDrawing {
         let sortedKeys = strokeMap.keys.sorted()
-        let strokes: [PKStroke] = sortedKeys.compactMap { key in
-            guard let json = strokeMap[key] else {
+        let strokes: [PKStroke] = sortedKeys.flatMap { key -> [PKStroke] in
+            guard let encoded = strokeMap[key] else {
                 NSLog("DittoDrawingModel.drawing(): Missing data for stroke key: %@", key)
-                return nil
+                return []
             }
-            guard let stroke = DittoStrokeModel.decode(from: json) else {
-                NSLog("DittoDrawingModel.drawing(): Failed to decode stroke for key: %@", key)
-                return nil
+            let decoded = DittoStrokeModel.decodeGroup(from: encoded)
+            if decoded.isEmpty {
+                NSLog("DittoDrawingModel.drawing(): Failed to decode stroke(s) for key: %@", key)
             }
-            return stroke
+            return decoded
         }
         return PKDrawing(strokes: strokes)
     }
@@ -52,89 +58,162 @@ struct DittoDrawingModel {
         strokeMap = map
         creationDateToKey = [:]
         keyToCreationDate = [:]
-        for (key, json) in map {
-            if let stroke = DittoStrokeModel.decode(from: json) {
-                creationDateToKey[stroke.path.creationDate] = key
-                keyToCreationDate[key] = stroke.path.creationDate
+        groupFingerprints = [:]
+        for (key, encoded) in map {
+            let strokes = DittoStrokeModel.decodeGroup(from: encoded)
+            if let first = strokes.first {
+                creationDateToKey[first.path.creationDate] = key
+                keyToCreationDate[key] = first.path.creationDate
+                groupFingerprints[key] = DittoStrokeModel.groupFingerprint(for: strokes)
             }
         }
     }
 
-    // MARK: - Diffing
+    // MARK: - Build Desired State
 
-    /// Compares current canvas strokes against a snapshot of known state using creation dates as
-    /// stable identifiers. Returns inserts (key -> JSON string) and removes (keys to UNSET).
+    /// Builds the full desired strokes map from current canvas strokes.
     ///
-    /// This is a pure function that can run off the main thread — it takes a snapshot of known
-    /// dates/keys rather than reading from `self`. The caller is responsible for persisting the
-    /// returned key mappings via `persistPendingKeys`.
+    /// Groups strokes by `creationDate` to handle bitmap eraser splits and the rare case of
+    /// unrelated strokes sharing a timestamp. All strokes in a group are encoded together as a
+    /// multi-stroke PKDrawing under one Ditto key, so no data is lost on collision.
     ///
-    /// Strokes are identified by `PKStrokePath.creationDate`, which PencilKit assigns uniquely when
-    /// a stroke is drawn. This only detects new and removed strokes — in-place modifications to
-    /// existing strokes (same creationDate, different content) are not detected.
+    /// For known groups whose fingerprint hasn't changed, reuses the stored encoding
+    /// (PKDrawing encoding is non-deterministic across instances, so re-encoding would produce
+    /// different bytes and cause unnecessary Ditto replication or concurrent write conflicts).
+    /// For new groups or groups with fingerprint changes (mask change, split, or piece
+    /// deletion), encodes fresh.
     ///
-    /// Known limitation: the bitmap eraser sets a `mask` on existing strokes without changing their
-    /// creationDate, so eraser changes are not synced. The vector eraser works correctly because it
-    /// removes/splits strokes, producing new creationDates. See: https://github.com/bplattenburg/DrawTogether/issues/8
-    static func computeDiff(
+    /// Also detects removes: known keys not present on the canvas.
+    ///
+    /// This is a pure function that can run off the main thread.
+    static func buildDesiredState(
         currentStrokes: [PKStroke],
-        knownCreationDateToKey: [Date: String]
-    ) -> (inserts: [String: String], removes: [String], newMappings: [(date: Date, key: String)]) {
-        let currentDates = Set(currentStrokes.map { $0.path.creationDate })
-        let knownDates = Set(knownCreationDateToKey.keys)
-
-        // Strokes in canvas but not known -> new
-        var inserts: [String: String] = [:]
+        knownCreationDateToKey: [Date: String],
+        knownStrokeMap: [String: String],
+        knownGroupFingerprints: [String: Data]
+    ) -> (desired: [String: String], removes: [String], newMappings: [(date: Date, key: String)]) {
+        var desired: [String: String] = [:]
         var newMappings: [(date: Date, key: String)] = []
-        for stroke in currentStrokes where !knownDates.contains(stroke.path.creationDate) {
-            guard let json = DittoStrokeModel.encode(stroke) else { continue }
-            let key = DittoStrokeModel.generateKey(for: stroke.path.creationDate)
-            inserts[key] = json
-            newMappings.append((date: stroke.path.creationDate, key: key))
+
+        // Group strokes by creationDate, preserving z-order within each group
+        var strokesByDate: [(date: Date, strokes: [PKStroke])] = []
+        var dateIndex: [Date: Int] = [:]
+        for stroke in currentStrokes {
+            let date = stroke.path.creationDate
+            if let idx = dateIndex[date] {
+                strokesByDate[idx].strokes.append(stroke)
+            } else {
+                dateIndex[date] = strokesByDate.count
+                strokesByDate.append((date: date, strokes: [stroke]))
+            }
         }
 
-        // Strokes known but not in canvas -> removed
-        let removes = knownDates.subtracting(currentDates).compactMap { knownCreationDateToKey[$0] }
+        for (date, group) in strokesByDate {
+            if let existingKey = knownCreationDateToKey[date] {
+                // Known group — check if fingerprint changed (mask change or split)
+                let currentFP = DittoStrokeModel.groupFingerprint(for: group)
+                let storedFP = knownGroupFingerprints[existingKey]
+                if currentFP == storedFP, let storedEncoding = knownStrokeMap[existingKey] {
+                    // Group unchanged — reuse stored encoding
+                    desired[existingKey] = storedEncoding
+                } else {
+                    // Group changed (mask change, split, or piece deletion) — re-encode
+                    guard let encoded = DittoStrokeModel.encodeGroup(group) else { continue }
+                    desired[existingKey] = encoded
+                }
+            } else {
+                // New stroke group
+                guard let encoded = DittoStrokeModel.encodeGroup(group) else { continue }
+                let key = DittoStrokeModel.generateKey(for: date)
+                desired[key] = encoded
+                newMappings.append((date: date, key: key))
+            }
+        }
 
-        return (inserts: inserts, removes: removes, newMappings: newMappings)
+        // Keys known locally but not on canvas → removes
+        let currentKeys = Set(desired.keys)
+        let knownKeys = Set(knownCreationDateToKey.values)
+        let removes = Array(knownKeys.subtracting(currentKeys))
+
+        return (desired: desired, removes: removes, newMappings: newMappings)
     }
 
-    /// Persists key mappings from a `computeDiff` result so repeated diffs won't generate duplicates.
-    mutating func persistPendingKeys(_ mappings: [(date: Date, key: String)]) {
-        for mapping in mappings {
+    // MARK: - Pending State Management
+
+    /// Persists key mappings and stroke data from a buildDesiredState result so repeated
+    /// calls won't generate duplicates or re-detect the same changes.
+    /// Returns old strokeMap values for rollback on transaction failure.
+    mutating func persistPending(
+        newMappings: [(date: Date, key: String)],
+        desired: [String: String],
+        currentStrokes: [PKStroke]
+    ) -> [String: String?] {
+        // Track new key mappings
+        for mapping in newMappings {
             creationDateToKey[mapping.date] = mapping.key
             keyToCreationDate[mapping.key] = mapping.date
+        }
+
+        // Update strokeMap and capture old values for rollback
+        var oldValues: [String: String?] = [:]
+        for (key, encoded) in desired {
+            oldValues[key] = strokeMap[key]
+            strokeMap[key] = encoded
+        }
+
+        // Update group fingerprints from current strokes grouped by date
+        var strokesByDate: [Date: [PKStroke]] = [:]
+        for stroke in currentStrokes {
+            strokesByDate[stroke.path.creationDate, default: []].append(stroke)
+        }
+        for (date, group) in strokesByDate {
+            if let key = creationDateToKey[date] {
+                groupFingerprints[key] = DittoStrokeModel.groupFingerprint(for: group)
+            }
+        }
+
+        return oldValues
+    }
+
+    /// Rolls back changes from persistPending when a transaction fails.
+    mutating func rollbackPending(
+        oldValues: [String: String?],
+        newMappings: [(date: Date, key: String)]
+    ) {
+        // Remove new key mappings
+        for mapping in newMappings {
+            creationDateToKey.removeValue(forKey: mapping.date)
+            keyToCreationDate.removeValue(forKey: mapping.key)
+        }
+
+        // Restore old strokeMap values and recalculate group fingerprints
+        for (key, oldValue) in oldValues {
+            if let old = oldValue {
+                strokeMap[key] = old
+                let strokes = DittoStrokeModel.decodeGroup(from: old)
+                if !strokes.isEmpty {
+                    groupFingerprints[key] = DittoStrokeModel.groupFingerprint(for: strokes)
+                } else {
+                    groupFingerprints.removeValue(forKey: key)
+                }
+            } else {
+                strokeMap.removeValue(forKey: key)
+                groupFingerprints.removeValue(forKey: key)
+            }
         }
     }
 
     // MARK: - Apply Changes
 
-    /// Rolls back key mappings that were optimistically persisted by diff() when a transaction fails.
-    /// This allows the strokes to be re-detected and re-synced on the next diff.
-    mutating func rollbackPendingKeys(inserts: [String: String]) {
-        for key in inserts.keys {
-            if let date = keyToCreationDate[key] {
-                creationDateToKey.removeValue(forKey: date)
-                keyToCreationDate.removeValue(forKey: key)
-            }
-        }
-    }
-
-    /// Updates internal state after a diff has been synced to Ditto
-    mutating func apply(inserts: [String: String], removes: [String]) {
+    /// Removes keys from internal state after successful UNSET in Ditto.
+    mutating func applyRemoves(_ removes: [String]) {
         for key in removes {
             if let date = keyToCreationDate[key] {
                 creationDateToKey.removeValue(forKey: date)
                 keyToCreationDate.removeValue(forKey: key)
             }
             strokeMap.removeValue(forKey: key)
-        }
-        for (key, json) in inserts {
-            strokeMap[key] = json
-            if let stroke = DittoStrokeModel.decode(from: json) {
-                creationDateToKey[stroke.path.creationDate] = key
-                keyToCreationDate[key] = stroke.path.creationDate
-            }
+            groupFingerprints.removeValue(forKey: key)
         }
     }
 }
