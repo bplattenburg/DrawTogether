@@ -149,7 +149,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.model.strokeMap.count, 1)
 
-        // Simulate a remote insert directly into Ditto
+        // Simulate a remote peer inserting a stroke by writing directly to Ditto
+        // (bypasses the coordinator to mimic data arriving from another device)
         let remoteStroke = makeStroke(at: CGPoint(x: 200, y: 200), creationDate: Date(timeIntervalSince1970: 5000))
         guard let remoteJSON = DittoStrokeModel.encode(remoteStroke) else {
             XCTFail("Failed to encode remote stroke")
@@ -164,6 +165,125 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
         // Wait for the coordinator's observer to update the model
         await waitForModel(strokeCount: 2)
+    }
+
+    // MARK: - Modified Stroke Tests
+
+    func testModifiedStrokeSyncsToDitto() async throws {
+        // Sync an unmasked stroke
+        let date = Date(timeIntervalSince1970: 1000)
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        canvasView.drawing = PKDrawing(strokes: [stroke])
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
+
+        // Apply a mask (simulating bitmap eraser) and sync again
+        let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
+        let maskedStroke = PKStroke(ink: stroke.ink, path: stroke.path, transform: stroke.transform, mask: mask)
+        canvasView.drawing = PKDrawing(strokes: [maskedStroke])
+
+        // Wait for the model to update with the masked stroke
+        let exp = expectation(description: "Model updated with masked stroke")
+        coordinator.onModelUpdate = { [weak self] in
+            guard let self else { return }
+            // Check that the stored stroke now has a mask
+            if let key = self.coordinator.model.creationDateToKey[date],
+               let encoded = self.coordinator.model.strokeMap[key] {
+                let decoded = DittoStrokeModel.decodeGroup(from: encoded)
+                if decoded.first?.mask != nil {
+                    exp.fulfill()
+                    self.coordinator.onModelUpdate = nil
+                }
+            }
+        }
+        coordinator.canvasViewDrawingDidChange(canvasView)
+        await fulfillment(of: [exp], timeout: 5.0)
+    }
+
+    func testModifiedStrokeFromRemoteUpdatesLocal() async throws {
+        // Sync a stroke through the coordinator first
+        let date = Date(timeIntervalSince1970: 1000)
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
+        canvasView.drawing = PKDrawing(strokes: [stroke])
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
+
+        // Simulate a remote peer applying a bitmap eraser by writing a masked stroke
+        // directly to Ditto (bypasses the coordinator to mimic data arriving from another device)
+        let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
+        let maskedStroke = PKStroke(ink: stroke.ink, path: stroke.path, transform: stroke.transform, mask: mask)
+        guard let maskedEncoded = DittoStrokeModel.encode(maskedStroke) else {
+            XCTFail("Failed to encode masked stroke")
+            return
+        }
+        let key = coordinator.model.creationDateToKey[date]!
+        let doc: [String: Any] = ["_id": coordinator.model.drawingID, "strokes": [key: maskedEncoded]]
+        try await ditto.store.execute(
+            query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO UPDATE",
+            arguments: ["doc": doc]
+        )
+
+        // Wait for the coordinator's observer to update the model with the masked stroke
+        let exp = expectation(description: "Model updated with remote masked stroke")
+        coordinator.onModelUpdate = { [weak self] in
+            guard let self else { return }
+            if let encoded = self.coordinator.model.strokeMap[key] {
+                let decoded = DittoStrokeModel.decodeGroup(from: encoded)
+                if decoded.first?.mask != nil {
+                    exp.fulfill()
+                    self.coordinator.onModelUpdate = nil
+                }
+            }
+        }
+        await fulfillment(of: [exp], timeout: 5.0)
+
+        // Verify fingerprint was populated
+        XCTAssertNotNil(coordinator.model.groupFingerprints[key])
+    }
+
+    func testMixedInsertUpdateAndRemove() async throws {
+        // Sync strokes A and B
+        let dateA = Date(timeIntervalSince1970: 1000)
+        let dateB = Date(timeIntervalSince1970: 2000)
+        let strokeA = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: dateA)
+        let strokeB = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: dateB)
+        canvasView.drawing = PKDrawing(strokes: [strokeA, strokeB])
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 2)
+
+        let keyA = coordinator.model.creationDateToKey[dateA]!
+        let keyB = coordinator.model.creationDateToKey[dateB]!
+
+        // Modify A (add mask), remove B, add C
+        let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
+        let maskedA = PKStroke(ink: strokeA.ink, path: strokeA.path, transform: strokeA.transform, mask: mask)
+        let dateC = Date(timeIntervalSince1970: 3000)
+        let strokeC = makeStroke(at: CGPoint(x: 90, y: 90), creationDate: dateC)
+        canvasView.drawing = PKDrawing(strokes: [maskedA, strokeC])
+
+        // Wait for Ditto to reflect: B removed, so keyB should be gone
+        let exp = expectation(description: "Ditto has mixed changes applied")
+        let observer = try ditto.store.registerObserver(
+            query: "SELECT * FROM drawings WHERE _id = :id",
+            arguments: ["id": coordinator.model.drawingID]
+        ) { result in
+            guard let item = result.items.first,
+                  let strokes = item.value["strokes"] as? [String: Any] else { return }
+            // B should be removed and we should have exactly 2 strokes
+            if strokes[keyB] == nil && strokes.count == 2 {
+                exp.fulfill()
+            }
+        }
+        coordinator.canvasViewDrawingDidChange(canvasView)
+        await fulfillment(of: [exp], timeout: 5.0)
+        observer.cancel()
+
+        // Verify A has a mask
+        let dittoMap = try await queryStrokesMap()
+        if let encodedA = dittoMap[keyA] as? String {
+            let decodedA = DittoStrokeModel.decodeGroup(from: encodedA)
+            XCTAssertFalse(decodedA.isEmpty, "Stroke A should decode successfully")
+            XCTAssertNotNil(decodedA.first?.mask, "Stroke A should have a mask after modification")
+        } else {
+            XCTFail("Stroke A not found in Ditto")
+        }
     }
 
     // MARK: - Round-Trip Tests
