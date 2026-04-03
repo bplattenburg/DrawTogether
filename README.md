@@ -1,2 +1,6 @@
 # DrawTogether
-A Ditto-backed app for collaborative drawing
+A Ditto-backed app for collaborative drawing, based on Apple's PencilKit.
+
+This is a fun side project that I thought would be a lot easier than it turned out to be - PencilKit makes a lot of single-write assumptions and optimizations - which turned this into a really interesting (if complicated) case study in utilizing Ditto's CRDT-based deterministic conflict resolution with multiple writers. 
+
+This is open source so feel free to contribute if you want!
