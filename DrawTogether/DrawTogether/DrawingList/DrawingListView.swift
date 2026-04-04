@@ -7,10 +7,10 @@
 
 import SwiftUI
 
-struct DrawingPickerView: View {
+struct DrawingListView: View {
     @StateObject private var drawingList = DrawingListProvider()
     @State private var newDrawingName = ""
-    @State private var selectedDrawingID: String?
+    @State private var selectedDrawing: DrawingInfo?
 
     var body: some View {
         NavigationStack {
@@ -18,7 +18,7 @@ struct DrawingPickerView: View {
                 Section {
                     ForEach(drawingList.drawings) { drawing in
                         Button {
-                            selectedDrawingID = drawing.id
+                            selectedDrawing = drawing
                         } label: {
                             Text(drawing.name)
                         }
@@ -41,8 +41,8 @@ struct DrawingPickerView: View {
                 }
             }
             .navigationTitle("DrawTogether")
-            .navigationDestination(item: $selectedDrawingID) { drawingID in
-                DrawingView(drawingID: drawingID)
+            .navigationDestination(item: $selectedDrawing) { drawing in
+                DrawingView(drawingInfo: drawing)
             }
         }
     }
@@ -54,7 +54,7 @@ struct DrawingPickerView: View {
         Task {
             do {
                 let id = try await drawingList.createDrawing(name: name)
-                selectedDrawingID = id
+                selectedDrawing = DrawingInfo(id: id, name: name)
             } catch {
                 NSLog("Failed to create drawing: %@", "\(error)")
             }

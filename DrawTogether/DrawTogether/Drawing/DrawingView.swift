@@ -9,14 +9,16 @@ import SwiftUI
 import PencilKit
 
 struct DrawingView: View {
-    let drawingID: String
+    let drawingInfo: DrawingInfo
 
     @State private var drawing = PKDrawing()
     @State private var toolPicker: PKToolPicker? = PKToolPicker()
 
     var body: some View {
-        DrawingCanvasView(drawing: $drawing, toolPicker: $toolPicker, drawingID: drawingID)
-            .id(drawingID)
+        DrawingCanvasView(drawing: $drawing, toolPicker: $toolPicker, drawingID: drawingInfo.id)
+            .id(drawingInfo.id)
             .edgesIgnoringSafeArea(.all)
+            .navigationTitle(drawingInfo.name)
+            .navigationBarTitleDisplayMode(.inline)
     }
 }

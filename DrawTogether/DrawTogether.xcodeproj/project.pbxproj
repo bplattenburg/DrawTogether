@@ -205,11 +205,11 @@
 			);
 			name = "Generate Env.swift from .env";
 			outputPaths = (
-				"$(SRCROOT)/DrawTogether/Env.swift",
+				"$(SRCROOT)/DrawTogether/Generated/Env.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$SRCROOT/buildEnv.sh\" \"$SRCROOT/../.env\" \"$SRCROOT/DrawTogether\"\n";
+			shellScript = "\"$SRCROOT/buildEnv.sh\" \"$SRCROOT/../.env\" \"$SRCROOT/DrawTogether/Generated\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
