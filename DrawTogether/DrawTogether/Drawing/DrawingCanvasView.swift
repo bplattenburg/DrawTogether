@@ -8,9 +8,10 @@
 import SwiftUI
 import PencilKit
 
-struct CanvasView: UIViewRepresentable {
+struct DrawingCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     @Binding var toolPicker: PKToolPicker?
+    let drawingID: String
 
     func makeUIView(context: Context) -> PKCanvasView {
         let canvasView = PKCanvasView()
@@ -32,6 +33,6 @@ struct CanvasView: UIViewRepresentable {
     }
 
     func makeCoordinator() -> DrawingSyncCoordinator {
-        DrawingSyncCoordinator(self)
+        DrawingSyncCoordinator(self, drawingID: drawingID)
     }
 }

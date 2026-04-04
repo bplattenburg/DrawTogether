@@ -27,7 +27,7 @@ struct DittoDrawingModel {
     /// encoding stroke count and each stroke's mask data.
     private(set) var groupFingerprints: [String: Data] = [:]
 
-    init(drawingID: String = "2") {
+    init(drawingID: String) {
         self.drawingID = drawingID
     }
 

@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A451961A2F7AB38B0066566B /* DittoObjC in Frameworks */ = {isa = PBXBuildFile; productRef = A4A6DA512E873476001228BF /* DittoObjC */; };
-		A451961B2F7AB38B0066566B /* DittoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A4A6DA532E873476001228BF /* DittoSwift */; };
+		A45195F72F78BC190066566B /* DittoObjC in Frameworks */ = {isa = PBXBuildFile; productRef = A4A6DA512E873476001228BF /* DittoObjC */; };
+		A45195F82F78BC190066566B /* DittoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A4A6DA532E873476001228BF /* DittoSwift */; };
 		A4A6DA522E873476001228BF /* DittoObjC in Frameworks */ = {isa = PBXBuildFile; productRef = A4A6DA512E873476001228BF /* DittoObjC */; };
 		A4A6DA542E873476001228BF /* DittoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A4A6DA532E873476001228BF /* DittoSwift */; };
 /* End PBXBuildFile section */
@@ -55,8 +55,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A451961A2F7AB38B0066566B /* DittoObjC in Frameworks */,
-				A451961B2F7AB38B0066566B /* DittoSwift in Frameworks */,
+				A45195F72F78BC190066566B /* DittoObjC in Frameworks */,
+				A45195F82F78BC190066566B /* DittoSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -205,11 +205,11 @@
 			);
 			name = "Generate Env.swift from .env";
 			outputPaths = (
-				"$(SRCROOT)/DrawTogether/Env.swift",
+				"$(SRCROOT)/DrawTogether/Generated/Env.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$SRCROOT/buildEnv.sh\" \"$SRCROOT/../.env\" \"$SRCROOT/DrawTogether\"\n";
+			shellScript = "\"$SRCROOT/buildEnv.sh\" \"$SRCROOT/../.env\" \"$SRCROOT/DrawTogether/Generated\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

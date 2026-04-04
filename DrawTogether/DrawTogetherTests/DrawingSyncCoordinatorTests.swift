@@ -26,8 +26,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
 
         // Create coordinator with injected test Ditto and no debounce delay
-        let parent = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil))
-        coordinator = DrawingSyncCoordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0)
+        let parent = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "1")
+        coordinator = DrawingSyncCoordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "1")
 
         canvasView = PKCanvasView()
         coordinator.canvasView = canvasView
@@ -306,4 +306,51 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.model.drawing().strokes.count, 1)
     }
 
+    // MARK: - Per-Drawing Coordinator Isolation Tests
+
+    func testNewCoordinatorStartsWithCleanState() async throws {
+        // Sync a stroke to drawing "1"
+        let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
+        canvasView.drawing = PKDrawing(strokes: [stroke])
+        try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
+
+        // Create a new coordinator for drawing "2" (simulating navigation to a new drawing)
+        let parent2 = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "2")
+        let coordinator2 = DrawingSyncCoordinator(parent2, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "2")
+
+        XCTAssertEqual(coordinator2.model.drawingID, "2", "New coordinator should have its own drawingID")
+        XCTAssertTrue(coordinator2.model.strokeMap.isEmpty, "New coordinator should start with empty state")
+        XCTAssertTrue(coordinator2.model.creationDateToKey.isEmpty, "New coordinator should have no key mappings")
+    }
+
+    func testNewCoordinatorReceivesExistingDrawingStrokes() async throws {
+        // Insert strokes for drawing "2" directly into Ditto
+        let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
+        guard let encoded = DittoStrokeModel.encode(stroke) else {
+            XCTFail("Failed to encode stroke")
+            return
+        }
+        let key = DittoStrokeModel.generateKey(for: Date(timeIntervalSince1970: 1000))
+        let doc: [String: Any] = ["_id": "2", "strokes": [key: encoded]]
+        try await ditto.store.execute(
+            query: "INSERT INTO drawings VALUES (:doc) ON ID CONFLICT DO MERGE",
+            arguments: ["doc": doc]
+        )
+
+        // Create a new coordinator for drawing "2" and wait for its observer to deliver strokes
+        let parent2 = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "2")
+        let coordinator2 = DrawingSyncCoordinator(parent2, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "2")
+
+        let exp = expectation(description: "Coordinator 2 model updated with drawing 2 strokes")
+        coordinator2.onModelUpdate = {
+            if coordinator2.model.strokeMap.count == 1 {
+                exp.fulfill()
+                coordinator2.onModelUpdate = nil
+            }
+        }
+        await fulfillment(of: [exp], timeout: 5.0)
+
+        XCTAssertEqual(coordinator2.model.drawingID, "2")
+        XCTAssertEqual(coordinator2.model.strokeMap.count, 1)
+    }
 }
