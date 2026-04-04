@@ -16,7 +16,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     var parent: CanvasView
     var toolPicker: PKToolPicker?
     var observer: DittoStoreObserver?
-    var model = DittoDrawingModel() {
+    var model: DittoDrawingModel {
         didSet { onModelUpdate?() }
     }
     var isUpdatingFromDitto = false
@@ -35,7 +35,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     /// Debounce interval for coalescing rapid drawing changes
     let syncDebounceNanoseconds: UInt64
 
-    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000, drawingID: String = "1") {
+    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000, drawingID: String) {
         self.parent = parent
         self.ditto = ditto
         self.model = DittoDrawingModel(drawingID: drawingID)

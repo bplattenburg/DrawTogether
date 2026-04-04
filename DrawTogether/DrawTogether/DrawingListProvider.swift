@@ -28,7 +28,7 @@ class DrawingListProvider: ObservableObject {
             ) { [weak self] result in
                 let infos = result.items.compactMap { item -> DrawingInfo? in
                     guard let id = item.value["_id"] as? String else { return nil }
-                    let name = item.value["name"] as? String ?? "Untitled"
+                    let name = item.value["name"] as? String ?? "Untitled (\(id.prefix(4)))"
                     return DrawingInfo(id: id, name: name)
                 }
                 Task { @MainActor [weak self] in
