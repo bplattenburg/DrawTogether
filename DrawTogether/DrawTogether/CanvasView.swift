@@ -23,11 +23,6 @@ struct CanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {
-        // Switch drawing if the ID changed
-        if context.coordinator.model.drawingID != drawingID {
-            context.coordinator.switchDrawing(to: drawingID)
-        }
-
         if uiView.drawing != drawing {
             uiView.drawing = drawing
         }

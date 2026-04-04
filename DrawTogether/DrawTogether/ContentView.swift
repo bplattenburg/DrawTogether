@@ -16,6 +16,7 @@ struct ContentView: View {
 
     var body: some View {
         CanvasView(drawing: $drawing, toolPicker: $toolPicker, drawingID: drawingID)
+            .id(drawingID)
             .edgesIgnoringSafeArea(.all)
     }
 }

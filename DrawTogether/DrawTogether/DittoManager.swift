@@ -16,7 +16,7 @@ final class DittoManager {
         }
     }()
 
-    public let ditto: Ditto
+    let ditto: Ditto
 
     private init() throws {
         let cloudURL = URL(string: Env.DITTO_AUTH_URL)!

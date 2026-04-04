@@ -42,7 +42,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Drawing Reconstruction Tests
 
     func testDrawingRebuildsInSortedOrder() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
 
         let date1 = Date(timeIntervalSince1970: 1000)
         let date2 = Date(timeIntervalSince1970: 2000)
@@ -68,7 +68,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Build Desired State Tests
 
     func testBuildDesiredStateNewStrokes() {
-        let model = DittoDrawingModel()
+        let model = DittoDrawingModel(drawingID: "test")
         let stroke1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         let stroke2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: Date(timeIntervalSince1970: 2000))
 
@@ -85,7 +85,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateReusesExistingKeys() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let key = "2026-03-25T12:00:00.000Z"
@@ -105,7 +105,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateReusesEncodingForUnchangedStrokes() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let key = "2026-03-25T12:00:00.000Z"
@@ -125,7 +125,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateReencodesWhenMaskAdded() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let key = "2026-03-25T12:00:00.000Z"
@@ -151,7 +151,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateReencodesWhenMaskChanged() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let maskA = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
@@ -176,7 +176,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateReencodesWhenMaskRemoved() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
@@ -198,7 +198,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateDetectsRemoves() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let strokeA = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         let strokeB = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: Date(timeIntervalSince1970: 2000))
         let keyA = "2026-03-25T12:00:00.000Z"
@@ -219,7 +219,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateMixed() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let strokeA = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         let strokeB = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: Date(timeIntervalSince1970: 2000))
         let keyA = "2026-03-25T12:00:00.000Z"
@@ -246,7 +246,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateEmptyCanvas() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         let key = "2026-03-25T12:00:00.000Z"
 
@@ -266,7 +266,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Persist / Rollback Tests
 
     func testPersistPendingPreventsRedundantMappings() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
 
         let result1 = DittoDrawingModel.buildDesiredState(
@@ -289,7 +289,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testRollbackPendingAllowsReDetection() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let stroke = makeStroke(at: CGPoint(x: 42, y: 42), creationDate: Date(timeIntervalSince1970: 1000))
 
         let result1 = DittoDrawingModel.buildDesiredState(
@@ -314,7 +314,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Apply Removes Tests
 
     func testApplyRemovesCleansMaps() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
@@ -333,7 +333,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testApplyRemovesLeavesOtherStrokesIntact() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let strokeA = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
         let strokeB = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: Date(timeIntervalSince1970: 2000))
         let keyA = "2026-03-25T12:00:00.000Z"
@@ -351,7 +351,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Update From Strokes Map Tests
 
     func testUpdateFromStrokesMapPopulatesGroupFingerprints() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let mask = UIBezierPath(rect: CGRect(x: 0, y: 0, width: 50, height: 50))
@@ -369,7 +369,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testUpdateFromStrokesMapHandlesMultiStrokeGroup() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
@@ -390,7 +390,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testUpdateFromStrokesMapClearsStateOnEmptyMap() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: Date(timeIntervalSince1970: 1000))
 
         modelWithKnownStrokes(&model, strokes: [(stroke, "2026-03-25T12:00:00.000Z")])
@@ -406,7 +406,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Stroke Split Tests
 
     func testBuildDesiredStateGroupsSplitStrokes() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let key = "2026-03-25T12:00:00.000Z"
@@ -435,7 +435,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateReencodesOnSplit() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let stroke = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let key = "2026-03-25T12:00:00.000Z"
@@ -458,7 +458,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateHandlesDeleteOfOneSplitPiece() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
@@ -489,7 +489,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testBuildDesiredStateHandlesDeleteOfAllSplitPieces() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
@@ -514,7 +514,7 @@ final class DittoDrawingModelTests: XCTestCase {
     }
 
     func testDrawingReconstructsFlattenedSplitStrokes() {
-        var model = DittoDrawingModel()
+        var model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
         let piece1 = makeStroke(at: CGPoint(x: 10, y: 10), creationDate: date)
         let piece2 = makeStroke(at: CGPoint(x: 50, y: 50), creationDate: date)
@@ -535,7 +535,7 @@ final class DittoDrawingModelTests: XCTestCase {
     // MARK: - Timestamp Collision Tests
 
     func testBuildDesiredStateGroupsUnrelatedStrokesWithSameTimestamp() {
-        let model = DittoDrawingModel()
+        let model = DittoDrawingModel(drawingID: "test")
         let date = Date(timeIntervalSince1970: 1000)
 
         // Two unrelated strokes that happen to share a creationDate

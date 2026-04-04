@@ -13,13 +13,13 @@ import DittoSwift
 /// Observes local drawing changes, builds the desired state, and syncs to Ditto via transactions.
 /// Observes remote Ditto changes and rebuilds the local drawing, preserving uncommitted local strokes.
 class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
-    var parent: CanvasView
+    private var parent: CanvasView
     var toolPicker: PKToolPicker?
-    var observer: DittoStoreObserver?
-    var model: DittoDrawingModel {
+    private var observer: DittoStoreObserver?
+    private(set) var model: DittoDrawingModel {
         didSet { onModelUpdate?() }
     }
-    var isUpdatingFromDitto = false
+    private var isUpdatingFromDitto = false
 
     /// Optional callback invoked after the model is updated (e.g., after inbound sync).
     /// Used by tests to fulfill expectations without timers or polling.
@@ -27,13 +27,13 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     weak var canvasView: PKCanvasView?
 
     /// The Ditto instance used for sync. Injected for testability.
-    let ditto: Ditto
+    private let ditto: Ditto
 
     /// Debounce task for outbound sync — cancelled and recreated on each drawing change
     private var syncTask: Task<Void, Never>?
 
     /// Debounce interval for coalescing rapid drawing changes
-    let syncDebounceNanoseconds: UInt64
+    private let syncDebounceNanoseconds: UInt64
 
     init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000, drawingID: String) {
         self.parent = parent
@@ -135,7 +135,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
         }
     }
 
-    func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
+    private func updateFromDitto(_ result: DittoSwift.DittoQueryResult) {
         // Observer callback may fire on any thread; dispatch to main for UIKit/SwiftUI safety
         let items = result.items
         DispatchQueue.main.async { [weak self] in
@@ -179,28 +179,4 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
         isUpdatingFromDitto = false
     }
 
-    // MARK: - Drawing Switching
-
-    /// Tears down the current observer and sets up a new one for a different drawing.
-    /// Only the observer query changes — the global Ditto subscription remains as-is.
-    func switchDrawing(to drawingID: String) {
-        syncTask?.cancel()
-        observer?.cancel()
-
-        model = DittoDrawingModel(drawingID: drawingID)
-
-        isUpdatingFromDitto = true
-        parent.drawing = PKDrawing()
-        isUpdatingFromDitto = false
-
-        do {
-            observer = try ditto.store.registerObserver(
-                query: "SELECT * FROM drawings WHERE _id = :drawingID",
-                arguments: ["drawingID": drawingID],
-                handler: updateFromDitto(_:)
-            )
-        } catch {
-            NSLog("Failed to register observer for drawingID %@: %@", drawingID, "\(error)")
-        }
-    }
 }
