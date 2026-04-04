@@ -13,7 +13,7 @@ import DittoSwift
 /// Observes local drawing changes, builds the desired state, and syncs to Ditto via transactions.
 /// Observes remote Ditto changes and rebuilds the local drawing, preserving uncommitted local strokes.
 class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
-    private var parent: CanvasView
+    private var parent: DrawingCanvasView
     var toolPicker: PKToolPicker?
     private var observer: DittoStoreObserver?
     private(set) var model: DittoDrawingModel {
@@ -35,7 +35,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     /// Debounce interval for coalescing rapid drawing changes
     private let syncDebounceNanoseconds: UInt64
 
-    init(_ parent: CanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000, drawingID: String) {
+    init(_ parent: DrawingCanvasView, ditto: Ditto = DittoManager.shared.ditto, syncDebounceNanoseconds: UInt64 = 100_000_000, drawingID: String) {
         self.parent = parent
         self.ditto = ditto
         self.model = DittoDrawingModel(drawingID: drawingID)

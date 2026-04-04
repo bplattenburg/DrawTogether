@@ -8,7 +8,7 @@
 import SwiftUI
 import PencilKit
 
-struct CanvasView: UIViewRepresentable {
+struct DrawingCanvasView: UIViewRepresentable {
     @Binding var drawing: PKDrawing
     @Binding var toolPicker: PKToolPicker?
     let drawingID: String

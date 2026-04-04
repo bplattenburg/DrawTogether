@@ -26,7 +26,7 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
 
         // Create coordinator with injected test Ditto and no debounce delay
-        let parent = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "1")
+        let parent = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "1")
         coordinator = DrawingSyncCoordinator(parent, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "1")
 
         canvasView = PKCanvasView()
@@ -315,7 +315,7 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         try await triggerSyncAndWaitForDitto(expectedStrokeCount: 1)
 
         // Create a new coordinator for drawing "2" (simulating navigation to a new drawing)
-        let parent2 = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "2")
+        let parent2 = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "2")
         let coordinator2 = DrawingSyncCoordinator(parent2, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "2")
 
         XCTAssertEqual(coordinator2.model.drawingID, "2", "New coordinator should have its own drawingID")
@@ -338,7 +338,7 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
         )
 
         // Create a new coordinator for drawing "2" and wait for its observer to deliver strokes
-        let parent2 = CanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "2")
+        let parent2 = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "2")
         let coordinator2 = DrawingSyncCoordinator(parent2, ditto: ditto, syncDebounceNanoseconds: 0, drawingID: "2")
 
         let exp = expectation(description: "Coordinator 2 model updated with drawing 2 strokes")

@@ -42,7 +42,7 @@ struct DrawingPickerView: View {
             }
             .navigationTitle("DrawTogether")
             .navigationDestination(item: $selectedDrawingID) { drawingID in
-                ContentView(drawingID: drawingID)
+                DrawingView(drawingID: drawingID)
             }
         }
     }
