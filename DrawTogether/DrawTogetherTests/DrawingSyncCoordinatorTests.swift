@@ -21,9 +21,8 @@ final class DrawingSyncCoordinatorTests: XCTestCase {
 
     override func setUp() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        ditto = Ditto(identity: .offlinePlayground(), persistenceDirectory: dir)
-        try ditto.disableSyncWithV3()
-        try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
+        let config = DittoConfig(databaseID: "test", connect: .smallPeersOnly(), persistenceDirectory: dir)
+        ditto = try Ditto.openSync(config: config)
 
         // Create coordinator with injected test Ditto and no debounce delay
         let parent = DrawingCanvasView(drawing: .constant(PKDrawing()), toolPicker: .constant(nil), drawingID: "1")

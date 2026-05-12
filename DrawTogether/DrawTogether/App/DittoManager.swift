@@ -5,6 +5,7 @@
 //  Created by Brian Plattenburg on 9/26/25.
 //
 
+import Foundation
 import DittoSwift
 
 final class DittoManager {
@@ -22,7 +23,6 @@ final class DittoManager {
         let cloudURL = URL(string: Env.DITTO_AUTH_URL)!
         let config = DittoConfig(databaseID: Env.DITTO_APP_ID, connect: .server(url: cloudURL))
         let ditto = try Ditto.openSync(config: config)
-        try ditto.disableSyncWithV3()
         ditto.auth?.expirationHandler = { ditto, secondsRemaining in
             ditto.auth?.login(
                 token: Env.DITTO_PLAYGROUND_TOKEN,
@@ -32,9 +32,6 @@ final class DittoManager {
                     NSLog("Ditto auth failed: %@", "\(error)")
                 }
             }
-        }
-        Task {
-            try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
         }
         try ditto.sync.registerSubscription(query: "SELECT * FROM drawings")
         try ditto.sync.start()

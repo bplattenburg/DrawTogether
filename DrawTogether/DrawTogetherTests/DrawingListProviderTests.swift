@@ -18,9 +18,8 @@ final class DrawingListProviderTests: XCTestCase {
     override func setUp() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        ditto = try Ditto(identity: .offlinePlayground(appID: "test", siteID: 1), persistenceDirectory: dir)
-        try ditto.disableSyncWithV3()
-        try await ditto.store.execute(query: "ALTER SYSTEM SET DQL_STRICT_MODE = false")
+        let config = DittoConfig(databaseID: "test", connect: .smallPeersOnly(), persistenceDirectory: dir)
+        ditto = try Ditto.openSync(config: config)
         provider = DrawingListProvider(ditto: ditto)
     }
 
