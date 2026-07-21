@@ -7,4 +7,6 @@ To learn more about Ditto, see the docs [here](https://docs.ditto.live/).
 
 To learn more about PencilKit, see the docs [here](https://developer.apple.com/documentation/pencilkit).
 
+To run the app, copy `.env.example` to `.env` and fill in the Ditto database ID, server URL, and playground token. The Xcode build generates `Env.swift` from that local file.
+
 This is open source so feel free to contribute if you want!
