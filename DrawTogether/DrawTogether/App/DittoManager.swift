@@ -20,8 +20,8 @@ final class DittoManager {
     let ditto: Ditto
 
     private init() throws {
-        let cloudURL = URL(string: Env.DITTO_AUTH_URL)!
-        let config = DittoConfig(databaseID: Env.DITTO_APP_ID, connect: .server(url: cloudURL))
+        let serverURL = URL(string: Env.DITTO_SERVER_URL)!
+        let config = DittoConfig(databaseID: Env.DITTO_DATABASE_ID, connect: .server(url: serverURL))
         let ditto = try Ditto.openSync(config: config)
         ditto.auth?.expirationHandler = { ditto, secondsRemaining in
             ditto.auth?.login(
