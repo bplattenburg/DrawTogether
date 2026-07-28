@@ -18,8 +18,9 @@ import PencilKit
 /// strokes produces different bytes each time. Callers must store and reuse encoded values
 /// rather than re-encoding for comparison. Use `groupFingerprint(for:)` for change detection.
 ///
-/// Keys are ISO8601 timestamps derived from `PKStrokePath.creationDate`, which PencilKit assigns
-/// uniquely when a stroke is drawn, giving deterministic and chronologically sortable keys.
+/// Keys are ISO8601 timestamps derived from `PKStrokePath.creationDate`, giving deterministic
+/// and chronologically sortable keys. Callers group equal creation dates before encoding so a
+/// collision does not drop a stroke.
 struct DittoStrokeModel {
 
     /// Encodes a PKStroke as a base64 string via `PKDrawing.dataRepresentation()`.
@@ -75,11 +76,9 @@ struct DittoStrokeModel {
 
     /// Generates a deterministic, sortable key from a stroke's creation date.
     /// ISO8601 with fractional seconds (millisecond precision) ensures lexicographic sort = chronological order.
-    /// Collisions require two strokes created within the same millisecond, which is practically impossible:
-    /// each stroke requires physical drawing input that far exceeds 1ms, and PencilKit serializes stroke
-    /// creation on the main thread. If a collision does occur (or PencilKit produces multiple strokes with
-    /// the same `creationDate`, e.g., bitmap eraser splits), the strokes are grouped and encoded together
-    /// under one key via `encodeGroup`, so no data is lost.
+    /// If multiple strokes share the same millisecond, either because their creation dates collide or
+    /// because PencilKit split a stroke during bitmap erasing, they are encoded together under one key
+    /// via `encodeGroup`.
     static func generateKey(for date: Date) -> String {
         ISO8601DateFormatter.fractional.string(from: date)
     }
