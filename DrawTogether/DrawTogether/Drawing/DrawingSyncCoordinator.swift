@@ -11,7 +11,8 @@ import DittoSwift
 
 /// Coordinates bidirectional sync between a PKCanvasView and Ditto.
 /// Observes local drawing changes, builds the desired state, and syncs to Ditto via transactions.
-/// Observes remote Ditto changes and rebuilds the local drawing, preserving uncommitted local strokes.
+/// Observes remote Ditto changes and rebuilds the local drawing, preserving newly created local
+/// strokes that are not in the synchronized model yet.
 class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
     private var parent: DrawingCanvasView
     var toolPicker: PKToolPicker?
@@ -160,7 +161,7 @@ class DrawingSyncCoordinator: NSObject, PKCanvasViewDelegate {
         // Cancel any pending sync — will be re-triggered if there are uncommitted local strokes
         syncTask?.cancel()
 
-        // Preserve uncommitted local strokes from the canvas (not the binding, which may be stale)
+        // Preserve newly created local strokes from the canvas (not the binding, which may be stale)
         let knownDates = Set(model.creationDateToKey.keys)
         let currentStrokes = canvasView?.drawing.strokes ?? parent.drawing.strokes
         let uncommittedStrokes = currentStrokes.filter { !knownDates.contains($0.path.creationDate) }
