@@ -8,8 +8,9 @@ Ditto syncs those changes when the devices can communicate.
 
 DrawTogether is a just-for-fun side project focused on two people editing the
 same PencilKit canvas at the same time. PencilKit has strong single-writer
-assumptions, while Ditto is built for peers writing independently. The app
-bridges those models by making the individual stroke the conflict boundary.
+assumptions, while Ditto uses CRDTs to merge concurrent changes
+deterministically. The app bridges those models by making the individual stroke
+the conflict boundary.
 
 ## Data model
 
@@ -32,8 +33,9 @@ and stores each stroke in a map:
 
 `strokes` is an
 [add-wins Ditto map](https://docs.ditto.live/dql/types-and-definitions#map-operations).
-Each key merges independently, so concurrent additions from different peers are
-preserved. The base64 value under each key is a
+Ditto can merge changes to each key without replacing other entries, so
+concurrent additions from different peers are preserved. The base64 value under
+each key is a
 [register](https://docs.ditto.live/dql/types-and-definitions#register-operations),
 which moves the last-write-wins boundary from the whole canvas down to one
 stroke.
