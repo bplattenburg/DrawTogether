@@ -6,11 +6,10 @@ DrawTogether is a collaborative iOS drawing app built with
 [local Ditto store](https://docs.ditto.live/key-concepts/accessing-data), and
 Ditto syncs those changes when the devices can communicate.
 
-DrawTogether started as a just-for-fun side project and got a lot more involved
-once two people could edit the same PencilKit canvas. PencilKit has strong
-single-writer assumptions, while Ditto is built for peers writing independently.
-This repo shows how those models fit together by making the individual stroke
-the conflict boundary.
+DrawTogether is a just-for-fun side project focused on two people editing the
+same PencilKit canvas at the same time. PencilKit has strong single-writer
+assumptions, while Ditto is built for peers writing independently. The app
+bridges those models by making the individual stroke the conflict boundary.
 
 ## Data model
 
