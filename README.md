@@ -1,16 +1,16 @@
 # DrawTogether
 
-DrawTogether is a collaborative iOS drawing app built with
+DrawTogether is a just-for-fun collaborative iOS drawing app built with
 [PencilKit](https://developer.apple.com/documentation/pencilkit) and
-[Ditto](https://docs.ditto.live/). Each device writes to its
-[local Ditto store](https://docs.ditto.live/key-concepts/accessing-data), and
-Ditto syncs those changes when the devices can communicate.
+[Ditto](https://docs.ditto.live/). It focuses on two people editing the same
+PencilKit canvas at the same time.
 
-DrawTogether is a just-for-fun side project focused on two people editing the
-same PencilKit canvas at the same time. PencilKit has strong single-writer
-assumptions, while Ditto uses CRDTs to merge concurrent changes
-deterministically. The app bridges those models by making the individual stroke
-the conflict boundary.
+Each device writes to its
+[local Ditto store](https://docs.ditto.live/key-concepts/accessing-data), and
+Ditto syncs those changes when the devices can communicate. PencilKit has strong
+single-writer assumptions, while Ditto uses CRDTs to merge concurrent changes
+deterministically. DrawTogether connects those models by using the individual
+stroke as the conflict boundary.
 
 ## Data model
 
@@ -33,9 +33,9 @@ and stores each stroke in a map:
 
 `strokes` is an
 [add-wins Ditto map](https://docs.ditto.live/dql/types-and-definitions#map-operations).
-Ditto can merge changes to each key without replacing other entries, so
-concurrent additions from different peers are preserved. The base64 value under
-each key is a
+Each key is a separate entry in that map, so Ditto can merge changes to one key
+without replacing the others. Concurrent additions from different peers are
+preserved. The base64 value under each key is a
 [register](https://docs.ditto.live/dql/types-and-definitions#register-operations),
 which moves the last-write-wins boundary from the whole canvas down to one
 stroke.
@@ -57,11 +57,10 @@ both strokes. If both peers change the same stroke, Ditto deterministically
 selects one complete encoded version. No separate conflict resolver is needed;
 the document shape defines the merge behavior.
 
-This follows Ditto's
-[map-keyed collection pattern](https://docs.ditto.live/best-practices/conflict-resolution-patterns).
-Ditto's [Syncing Data](https://docs.ditto.live/key-concepts/syncing-data)
-documentation explains the add-wins map and last-write-wins register behavior
-used here.
+Ditto covers this model in
+[Conflict Resolution Patterns](https://docs.ditto.live/best-practices/conflict-resolution-patterns)
+and the underlying convergence behavior in
+[Syncing Data](https://docs.ditto.live/key-concepts/syncing-data).
 
 ## PencilKit serialization
 
@@ -90,8 +89,8 @@ document:
 3. It writes new and changed entries with `ON ID CONFLICT DO
    UPDATE_LOCAL_DIFF`, and explicitly `UNSET`s removed entries in the same
    [transaction](https://docs.ditto.live/sdk/latest/crud/transactions).
-4. A Ditto store observer receives the local or remote document, decodes the
-   entries, sorts the keys, and rebuilds the `PKDrawing`.
+4. A Ditto store observer reacts when the document changes in the local store,
+   decodes its entries, sorts the keys, and rebuilds the `PKDrawing`.
 
 [`UPDATE_LOCAL_DIFF`](https://docs.ditto.live/dql/insert#do-update-local-diff)
 means the coordinator can submit its current stroke map without rewriting and
