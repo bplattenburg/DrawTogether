@@ -6,9 +6,11 @@ DrawTogether is a collaborative iOS drawing app built with
 [local Ditto store](https://docs.ditto.live/key-concepts/accessing-data), and
 Ditto syncs those changes when the devices can communicate.
 
-PencilKit represents a canvas as one `PKDrawing` designed for a single editing
-session. Collaborative drawing needs conflict resolution below the complete
-drawing, so DrawTogether uses the individual stroke as that boundary.
+DrawTogether started as a just-for-fun side project and got a lot more involved
+once two people could edit the same PencilKit canvas. PencilKit has strong
+single-writer assumptions, while Ditto is built for peers writing independently.
+This repo shows how those models fit together by making the individual stroke
+the conflict boundary.
 
 ## Data model
 
@@ -120,3 +122,5 @@ The observer turns changes in that store back into UI state.
 Copy `.env.example` to `.env`, fill in the Ditto database ID, server URL, and
 playground token, then open `DrawTogether/DrawTogether.xcodeproj`. The build
 generates an ignored `Env.swift` from that local file.
+
+This is open source, so feel free to open an issue or send a PR.
