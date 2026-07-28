@@ -123,4 +123,6 @@ Copy `.env.example` to `.env`, fill in the Ditto database ID, server URL, and
 playground token, then open `DrawTogether/DrawTogether.xcodeproj`. The build
 generates an ignored `Env.swift` from that local file.
 
-This is open source, so feel free to open an issue or send a PR.
+## Contributing
+
+This is open source so feel free to contribute if you want!
